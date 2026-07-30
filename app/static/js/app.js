@@ -126,10 +126,33 @@ function renderFilterOptions(name, values) {
 }
 
 function fillProcess(selector) {
-  $(selector).innerHTML = state.options.processes
-    .filter((process) => process.isActive)
+  $(selector).innerHTML = filteredProcesses(true)
     .map((process) => `<option value="${process.id}">${esc(process.line)} / ${esc(process.type)} / ${esc(process.processName)}</option>`)
     .join("");
+}
+
+function filteredProcesses(activeOnly = false, source = state.options.processes) {
+  const types = checkedValues("type");
+  const lines = checkedValues("line");
+  const processes = checkedValues("process");
+  return source.filter((process) => (
+    (!activeOnly || process.isActive)
+    && (!types.length || types.includes(process.type))
+    && (!lines.length || lines.includes(process.line))
+    && (!processes.length || processes.includes(process.processName))
+  ));
+}
+
+function refreshProcessCombos() {
+  fillProcess("[name=processId]");
+  fillProcess("#bulkTextProcess");
+}
+
+function applyFiltersImmediately(reloadData = true) {
+  history.replaceState(null, "", "?" + params().toString());
+  refreshProcessCombos();
+  if ($("#view-processes").classList.contains("active")) loadProcesses();
+  if (reloadData) refreshAll();
 }
 
 function bind() {
@@ -140,13 +163,13 @@ function bind() {
     document.body.classList.toggle("dark");
     $("#themeToggle").textContent = document.body.classList.contains("dark") ? "밝은 모드" : "다크 모드";
   };
-  $("#applyFilters").onclick = () => {
-    history.replaceState(null, "", "?" + params().toString());
-    refreshAll();
-  };
+  ["start", "end"].forEach((id) => {
+    $("#" + id).addEventListener("change", applyFiltersImmediately);
+  });
   $("#resetFilters").onclick = () => {
     ["start", "end"].forEach((id) => { $("#" + id).value = ""; });
     $$(`.filter-menu input[type="checkbox"]`).forEach((input) => { input.checked = false; });
+    hydrateOptions();
     updateFilterCounts();
     updateTrendTitle();
     history.replaceState(null, "", location.pathname);
@@ -156,6 +179,7 @@ function bind() {
     button.onclick = () => {
       quickRange(button.dataset.range);
       $$(".quick-buttons button").forEach((item) => item.classList.toggle("active", item === button));
+      applyFiltersImmediately();
     };
   });
   ["type", "line", "process"].forEach((name) => {
@@ -163,6 +187,8 @@ function bind() {
       if (name === "type" || name === "line") linkedFilters();
       updateFilterCounts();
       updateTrendTitle();
+      refreshProcessCombos();
+      applyFiltersImmediately();
     });
   });
   $$(".filter-menu").forEach((details) => {
@@ -183,7 +209,10 @@ function bind() {
     const open = $(".filter-menu[open]");
     if (open) positionFilterMenu(open);
   }, true);
-  $("#metricFilter").onchange = () => chartTrend(state.trends);
+  $("#metricFilter").onchange = () => {
+    chartTrend(state.trends);
+    applyFiltersImmediately(false);
+  };
   $("#globalSearch").oninput = () => { state.page = 1; renderDataTable(); };
   $("#pageSize").onchange = (event) => { state.pageSize = Number(event.target.value); renderDataTable(); };
   $("#exportXlsx").onclick = () => { location.href = "/api/export?format=xlsx&" + params(); };
@@ -255,6 +284,7 @@ function linkedFilters() {
   const processes = typeFiltered.filter((process) => !refreshedLines.length || refreshedLines.includes(process.line));
   renderFilterOptions("process", [...new Set(processes.map((process) => process.processName))].sort());
   $$(`input[name="processFilter"]`).forEach((input) => { input.checked = currentProcesses.has(input.value); });
+  refreshProcessCombos();
 }
 
 function updateFilterCounts() {
@@ -648,7 +678,7 @@ async function saveBulkText() {
 }
 
 async function loadProcesses() {
-  const rows = await api("/api/processes");
+  const rows = filteredProcesses(false, await api("/api/processes"));
   renderTable("#processTable", ["Type", "Line", "Process", "현황", "활성", "관리"], rows.map((row) => [
     row.type,
     row.line,

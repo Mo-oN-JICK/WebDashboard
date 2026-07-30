@@ -60,4 +60,20 @@ def ensure_sqlite_schema() -> None:
         for name, ddl in required.items():
             if name not in existing:
                 conn.exec_driver_sql(f"ALTER TABLE daily_measurement ADD COLUMN {name} {ddl}")
+        conn.exec_driver_sql(
+            """
+            DELETE FROM daily_measurement
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM daily_measurement
+                GROUP BY processId, measurementDate
+            )
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_measurement_process_date_idx
+            ON daily_measurement(processId, measurementDate)
+            """
+        )
         conn.commit()

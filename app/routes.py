@@ -5,6 +5,7 @@ from functools import wraps
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 from sqlalchemy import desc, func
+from sqlalchemy.exc import IntegrityError
 
 from . import db
 from .models import AppSetting, AuditLog, DailyMeasurement, NoteTemplate, ProcessMaster, StatusOption, User
@@ -231,9 +232,13 @@ def create_measurement():
     )
     apply_extra_counts(item, data)
     db.session.add(item)
-    db.session.flush()
-    add_audit(user, "생성", "DailyMeasurement", item.id, None, measurement_dict(item))
-    db.session.commit()
+    try:
+        db.session.flush()
+        add_audit(user, "생성", "DailyMeasurement", item.id, None, measurement_dict(item))
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "동일 공정과 동일 날짜의 데이터가 이미 있습니다", "duplicate": True}), 409
     return jsonify(measurement_dict(item)), 201
 
 
