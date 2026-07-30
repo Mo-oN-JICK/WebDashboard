@@ -427,7 +427,7 @@ def processes():
 @admin_required
 def create_process():
     data = request.json or {}
-    proc = ProcessMaster(line=data["line"].strip(), type=data["type"].strip(), processName=data["processName"].strip(), status=data.get("status", "안정화 상태"))
+    proc = ProcessMaster(line=data["line"].strip(), type=data["type"].strip(), processName=data["processName"].strip(), status=(data.get("status") or "").strip())
     db.session.add(proc)
     db.session.flush()
     add_audit(current_user(), "생성", "ProcessMaster", proc.id, None, data)
@@ -448,6 +448,24 @@ def update_process(proc_id: int):
     add_audit(current_user(), "수정", "ProcessMaster", proc.id, before, data)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.delete("/api/processes/<int:proc_id>")
+@login_required
+@admin_required
+def delete_process(proc_id: int):
+    proc = ProcessMaster.query.get_or_404(proc_id)
+    before = {"line": proc.line, "type": proc.type, "processName": proc.processName, "status": proc.status, "isActive": proc.isActive}
+    has_data = DailyMeasurement.query.filter_by(processId=proc.id).first() is not None
+    if has_data:
+        proc.isActive = False
+        add_audit(current_user(), "삭제", "ProcessMaster", proc.id, before, {"isActive": False, "mode": "deactivate"})
+        db.session.commit()
+        return jsonify({"ok": True, "mode": "deactivated"})
+    add_audit(current_user(), "삭제", "ProcessMaster", proc.id, before, None)
+    db.session.delete(proc)
+    db.session.commit()
+    return jsonify({"ok": True, "mode": "deleted"})
 
 
 @bp.get("/api/users")

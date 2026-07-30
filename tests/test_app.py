@@ -141,3 +141,25 @@ ETC\t5\t6"""
     assert row.totalCount == 300
     assert row.etcCount == 5
     assert row.clusterCount == 31
+
+
+def test_process_create_defaults_blank_status_and_delete_without_data(client):
+    login(client)
+    res = client.post("/api/processes", json={"type": "FAS3.0", "line": "RB", "processName": "No Data Process"})
+    assert res.status_code == 201
+    proc_id = res.get_json()["id"]
+    proc = ProcessMaster.query.get(proc_id)
+    assert proc.status == ""
+    res = client.delete(f"/api/processes/{proc_id}")
+    assert res.status_code == 200
+    assert res.get_json()["mode"] == "deleted"
+    assert ProcessMaster.query.get(proc_id) is None
+
+
+def test_process_delete_with_data_deactivates(client):
+    login(client)
+    proc = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first()
+    res = client.delete(f"/api/processes/{proc.id}")
+    assert res.status_code == 200
+    assert res.get_json()["mode"] == "deactivated"
+    assert ProcessMaster.query.get(proc.id).isActive is False

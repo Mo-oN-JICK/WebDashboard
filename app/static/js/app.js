@@ -200,6 +200,7 @@ function bind() {
   $("#previewBulkText").onclick = renderBulkTextPreview;
   $("#saveBulkText").onclick = saveBulkText;
   $("#newProcess").onclick = () => editProcess();
+  $("#addProcessFromEntry").onclick = () => editProcess(null, "entry");
   $("#newUser").onclick = () => editUser();
   $("#importForm").onsubmit = importFile;
   $("#settingsForm").onsubmit = saveSettings;
@@ -648,31 +649,63 @@ async function saveBulkText() {
 
 async function loadProcesses() {
   const rows = await api("/api/processes");
-  renderTable("#processTable", ["Line", "Type", "Process", "현황", "활성", "관리"], rows.map((row) => [
-    row.line,
+  renderTable("#processTable", ["Type", "Line", "Process", "현황", "활성", "관리"], rows.map((row) => [
     row.type,
+    row.line,
     row.processName,
     row.status,
     row.isActive ? "활성" : "비활성",
-    isAdmin ? `<button onclick="editProcess(${row.id})">수정</button> <button onclick="toggleProcess(${row.id},${!row.isActive})">${row.isActive ? "비활성화" : "활성화"}</button>` : "-",
+    isAdmin ? `<button onclick="editProcess(${row.id})">수정</button> <button onclick="toggleProcess(${row.id},${!row.isActive})">${row.isActive ? "비활성화" : "활성화"}</button> <button onclick="deleteProcess(${row.id})">삭제</button>` : "-",
   ]));
 }
 
-window.editProcess = async (id) => {
-  const row = id ? (await api("/api/processes")).find((item) => item.id === id) : { line: "", type: "", processName: "", status: "안정화 상태" };
-  modal(id ? "공정 수정" : "공정 등록", `<div class="form-grid"><label>Line<input name="line" value="${esc(row.line)}"></label><label>Type<input name="type" value="${esc(row.type)}"></label><label>Process<input name="processName" value="${esc(row.processName)}"></label><label>현황<input name="status" value="${esc(row.status)}"></label></div>`, async () => {
+window.editProcess = async (id, originView = null) => {
+  const row = id ? (await api("/api/processes")).find((item) => item.id === id) : { line: "", type: "", processName: "", status: "" };
+  modal(id ? "공정 수정" : "공정 등록", processFormHtml(row), async () => {
     await api(id ? `/api/processes/${id}` : "/api/processes", { method: id ? "PUT" : "POST", body: JSON.stringify(modalData()) });
     toast("저장했습니다");
+    state.options = await api("/api/options");
+    hydrateOptions();
+    if (originView === "entry") showView("entry", "데이터 입력");
+    if ($("#view-processes").classList.contains("active")) loadProcesses();
+    await refreshAll();
+  });
+};
+
+function processFormHtml(row) {
+  return `<div class="form-grid">
+    <label>Type<input name="type" list="processTypeList" value="${esc(row.type)}" required></label>
+    <label>Line<input name="line" list="processLineList" value="${esc(row.line)}" required></label>
+    <label>Process<input name="processName" value="${esc(row.processName)}" required></label>
+    <label>현황<input name="status" list="processStatusList" value="${esc(row.status || "")}"></label>
+    ${datalistHtml("processTypeList", uniqueValues(state.options.processes.map((item) => item.type)))}
+    ${datalistHtml("processLineList", uniqueValues(state.options.processes.map((item) => item.line)))}
+    ${datalistHtml("processStatusList", uniqueValues([...(state.options.statuses || []), ...state.options.processes.map((item) => item.status)]))}
+  </div>`;
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter((value) => value !== null && value !== undefined && String(value).trim() !== "").map((value) => String(value).trim()))].sort();
+}
+
+function datalistHtml(id, values) {
+  return `<datalist id="${id}">${values.map((value) => `<option value="${esc(value)}"></option>`).join("")}</datalist>`;
+}
+
+window.toggleProcess = async (id, isActive) => {
+  await api(`/api/processes/${id}`, { method: "PUT", body: JSON.stringify({ isActive }) });
+  loadProcesses();
+};
+
+window.deleteProcess = async (id) => {
+  modal("공정 삭제", "실적 데이터가 없는 공정은 삭제되고, 실적 데이터가 있는 공정은 비활성화됩니다.", async () => {
+    const result = await api(`/api/processes/${id}`, { method: "DELETE" });
+    toast(result.mode === "deactivated" ? "실적 데이터가 있어 비활성화했습니다" : "삭제했습니다");
     state.options = await api("/api/options");
     hydrateOptions();
     loadProcesses();
     refreshAll();
   });
-};
-
-window.toggleProcess = async (id, isActive) => {
-  await api(`/api/processes/${id}`, { method: "PUT", body: JSON.stringify({ isActive }) });
-  loadProcesses();
 };
 
 async function loadUsers() {

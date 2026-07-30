@@ -114,7 +114,7 @@
             <h3>날짜별 데이터 등록</h3>
             <form id="entryForm" class="form-grid">
               <label>날짜<input type="date" name="measurementDate" required></label>
-              <label>공정<select name="processId" required></select></label>
+              <div class="field-with-action"><label>공정<select name="processId" required></select></label><button id="addProcessFromEntry" class="ghost admin-only" type="button">공정 추가</button></div>
               <label>총체결<input name="totalCount" type="number" min="0" required></label>
               <label>NG<input name="ngCount" type="number" min="0" required></label>
               <label>Etc<input name="etcCount" type="number" min="0" required></label>
