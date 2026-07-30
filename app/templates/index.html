@@ -9,30 +9,36 @@
 </head>
 <body class="dark">
   <div class="app-shell">
-    <aside class="sidebar" aria-label="주 메뉴">
-      <h1>품질관리</h1>
-      <nav>
-        <button data-view="dashboard" class="active">종합 대시보드</button>
-        <button data-view="browse">데이터 조회</button>
-        <button data-view="entry">데이터 입력</button>
-        <button data-view="processes">공정 관리</button>
-        <button data-view="import">데이터 가져오기</button>
-        <button data-view="users">사용자 관리</button>
-        <button data-view="audit">변경 이력</button>
-        <button data-view="settings">설정</button>
-      </nav>
-      <button id="themeToggle" class="ghost">밝은 모드</button>
+    <aside class="process-sidebar" aria-label="공정 리스트">
+      <div class="process-sidebar-head">
+        <h1>품질관리</h1>
+        <p>공정 리스트</p>
+      </div>
+      <div id="processTree" class="process-tree"></div>
     </aside>
     <main>
       <header class="topbar">
-        <div>
-          <p class="eyebrow" id="pageEyebrow">종합 대시보드</p>
-          <div class="title-row"><h2 id="pageTitle">날짜별 생산·품질 현황</h2><div id="alertButtons" class="alert-buttons"><button id="noticeButton" class="ghost" type="button" disabled>알림 0</button><button id="warningButton" class="ghost" type="button" disabled>경고 0</button></div></div>
+        <div class="topbar-main">
+          <div>
+            <p class="eyebrow" id="pageEyebrow">종합 대시보드</p>
+            <div class="title-row"><h2 id="pageTitle">날짜별 생산·품질 현황</h2><div id="alertButtons" class="alert-buttons"><button id="noticeButton" class="ghost" type="button" disabled>알림 0</button><button id="warningButton" class="ghost" type="button" disabled>경고 0</button></div></div>
+          </div>
+          <nav class="top-tabs" aria-label="주 메뉴">
+            <button data-view="dashboard" class="active">종합 대시보드</button>
+            <button data-view="browse">데이터 조회</button>
+            <button data-view="entry">데이터 입력</button>
+            <button data-view="processes">공정 관리</button>
+            <button data-view="import">데이터 가져오기</button>
+            <button data-view="users">사용자 관리</button>
+            <button data-view="audit">변경 이력</button>
+            <button data-view="settings">설정</button>
+          </nav>
         </div>
         <div class="topmeta">
           <span>최종 기준일 <b>{{ last_date }}</b></span>
           <span>마지막 업데이트 <b>{{ last_update }}</b></span>
           <span>{{ current_user.name }} ({{ "관리자" if current_user.role == "admin" else "조회자" }})</span>
+          <button id="themeToggle" class="ghost">밝은 모드</button>
           <a class="button ghost" href="{{ url_for('main.logout') }}">로그아웃</a>
         </div>
       </header>
@@ -43,10 +49,13 @@
           <span>~</span>
           <input type="date" id="end" aria-label="조회 종료일">
         </div>
-        <div class="quick-buttons" aria-label="빠른 기간">
-          <button data-range="7" class="ghost active">7일</button>
-          <button data-range="30" class="ghost">30일</button>
-        </div>
+        <select id="quickRange" aria-label="빠른 기간">
+          <option value="today">Today</option>
+          <option value="7" selected>1주</option>
+          <option value="14">2주</option>
+          <option value="21">3주</option>
+          <option value="28">4주</option>
+        </select>
         <details class="filter-menu process-filter-menu" data-filter="processGroup">
           <summary>공정 필터 <b id="typeCount">전체</b><b id="lineCount">전체</b><b id="processCount">전체</b></summary>
           <div class="menu-options combined-options">
@@ -161,6 +170,13 @@
         </form></article>
       </section>
     </main>
+    <aside id="alertDrawer" class="alert-drawer" aria-label="알림 및 경고 목록" aria-hidden="true">
+      <div class="alert-drawer-head">
+        <div><p class="eyebrow" id="alertDrawerEyebrow">알림</p><h3 id="alertDrawerTitle">알림 목록</h3></div>
+        <button id="closeAlertDrawer" class="ghost" type="button">닫기</button>
+      </div>
+      <div id="alertDrawerBody" class="alert-list"></div>
+    </aside>
   </div>
 
   <dialog id="modal"><form id="modalForm"><h3 id="modalTitle"></h3><div id="modalBody"></div><menu><button id="modalCancel" type="button" class="ghost">취소</button><button id="modalOk" type="submit" class="primary">확인</button></menu></form></dialog>

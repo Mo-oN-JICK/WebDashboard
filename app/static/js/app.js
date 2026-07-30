@@ -171,6 +171,7 @@ function hydrateOptions() {
   renderFilterOptions("type", state.options.types);
   renderFilterOptions("line", state.options.lines);
   renderFilterOptions("process", state.options.processes.map((p) => p.processName));
+  renderProcessTree();
   fillProcess("[name=processId]");
   fillProcess("#bulkTextProcess");
   $("#settingsForm").querySelectorAll("input").forEach((input) => {
@@ -186,6 +187,44 @@ function renderFilterOptions(name, values) {
     `<label class="check-option"><input type="radio" name="${name}Filter" value="" checked>전체</label>`,
     ...unique.map((value) => `<label class="check-option"><input type="radio" name="${name}Filter" value="${esc(value)}">${esc(value)}</label>`),
   ].join("");
+}
+
+function renderProcessTree() {
+  const target = $("#processTree");
+  if (!target || !state.options?.processes) return;
+  const selectedType = checkedValues("type")[0] || "";
+  const selectedLine = checkedValues("line")[0] || "";
+  const selectedProcess = checkedValues("process")[0] || "";
+  const grouped = {};
+  state.options.processes
+    .filter((process) => process.isActive)
+    .forEach((process) => {
+      grouped[process.type] ??= {};
+      grouped[process.type][process.line] ??= [];
+      grouped[process.type][process.line].push(process);
+    });
+  const html = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([type, lines]) => {
+    const lineHtml = Object.entries(lines).sort(([a], [b]) => a.localeCompare(b)).map(([line, processes]) => {
+      const processHtml = processes
+        .sort((a, b) => a.processName.localeCompare(b.processName))
+        .map((process) => `<button type="button" class="process-leaf ${selectedProcess === process.processName && selectedLine === process.line && selectedType === process.type ? "active" : ""}" data-type="${esc(process.type)}" data-line="${esc(process.line)}" data-process="${esc(process.processName)}">${esc(process.processName)}${process.status ? `<small>${esc(process.status)}</small>` : ""}</button>`)
+        .join("");
+      return `<details class="tree-line" ${selectedLine === line || selectedType === type ? "open" : ""}><summary><button type="button" class="${selectedLine === line && selectedType === type && !selectedProcess ? "active" : ""}" data-type="${esc(type)}" data-line="${esc(line)}">${esc(line)}</button></summary><div>${processHtml}</div></details>`;
+    }).join("");
+    return `<details class="tree-type" ${selectedType === type ? "open" : ""}><summary><button type="button" class="${selectedType === type && !selectedLine && !selectedProcess ? "active" : ""}" data-type="${esc(type)}">${esc(type)}</button></summary>${lineHtml}</details>`;
+  }).join("");
+  target.innerHTML = html || `<div class="empty">등록된 공정이 없습니다</div>`;
+}
+
+function applyProcessTreeFilter(dataset) {
+  setRadioValue("type", dataset.type || "");
+  linkedFilters();
+  setRadioValue("line", dataset.line || "");
+  linkedFilters();
+  setRadioValue("process", dataset.process || "");
+  updateFilterCounts();
+  updateTrendTitle();
+  applyFiltersImmediately();
 }
 
 function fillProcess(selector) {
@@ -209,6 +248,7 @@ function filteredProcesses(activeOnly = false, source = state.options.processes)
 function refreshProcessCombos() {
   fillProcess("[name=processId]");
   fillProcess("#bulkTextProcess");
+  renderProcessTree();
 }
 
 function applyFiltersImmediately(reloadData = true) {
@@ -219,9 +259,15 @@ function applyFiltersImmediately(reloadData = true) {
 }
 
 function bind() {
-  $$(".sidebar nav button").forEach((button) => {
+  $$(".top-tabs button").forEach((button) => {
     button.onclick = () => showView(button.dataset.view, button.textContent);
   });
+  $("#processTree").onclick = (event) => {
+    const button = event.target.closest("button[data-type]");
+    if (!button) return;
+    event.preventDefault();
+    applyProcessTreeFilter(button.dataset);
+  };
   $("#themeToggle").onclick = () => {
     document.body.classList.toggle("dark");
     $("#themeToggle").textContent = document.body.classList.contains("dark") ? "밝은 모드" : "다크 모드";
@@ -238,13 +284,10 @@ function bind() {
     history.replaceState(null, "", location.pathname);
     refreshAll();
   };
-  $$(".quick-buttons button").forEach((button) => {
-    button.onclick = () => {
-      quickRange(button.dataset.range);
-      $$(".quick-buttons button").forEach((item) => item.classList.toggle("active", item === button));
-      applyFiltersImmediately();
-    };
-  });
+  $("#quickRange").onchange = (event) => {
+    quickRange(event.target.value);
+    applyFiltersImmediately();
+  };
   ["type", "line", "process"].forEach((name) => {
     $(`#${name}Options`).addEventListener("change", () => {
       if (name === "type" || name === "line") linkedFilters();
@@ -278,6 +321,7 @@ function bind() {
   };
   $("#noticeButton").onclick = () => showAlertModal("notice");
   $("#warningButton").onclick = () => showAlertModal("warning");
+  $("#closeAlertDrawer").onclick = closeAlertDrawer;
   $("#globalSearch").oninput = () => { state.page = 1; renderDataTable(); };
   $("#pageSize").onchange = (event) => { state.pageSize = Number(event.target.value); renderDataTable(); };
   $("#processSearch").oninput = loadProcesses;
@@ -315,7 +359,7 @@ function showView(view, title) {
   sessionStorage.setItem("activeView", view);
   $$(".view").forEach((el) => el.classList.remove("active"));
   $("#view-" + view).classList.add("active");
-  $$(".sidebar nav button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  $$(".top-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#pageTitle").textContent = view === "dashboard" ? "날짜별 생산·품질 현황" : title;
   $("#pageEyebrow").textContent = title;
   if (view === "audit") loadAudit();
@@ -325,7 +369,7 @@ function showView(view, title) {
 
 function restoreView() {
   const view = sessionStorage.getItem("activeView");
-  const button = view ? $(`.sidebar nav button[data-view="${view}"]`) : null;
+  const button = view ? $(`.top-tabs button[data-view="${view}"]`) : null;
   if (button) showView(view, button.textContent);
 }
 
@@ -333,7 +377,9 @@ function quickRange(value) {
   const now = new Date();
   let start = "";
   let end = now.toISOString().slice(0, 10);
-  if (value === "7" || value === "30") {
+  if (value === "today") {
+    start = end;
+  } else if (["7", "14", "21", "28"].includes(value)) {
     const date = new Date(now);
     date.setDate(now.getDate() - Number(value) + 1);
     start = date.toISOString().slice(0, 10);
@@ -408,8 +454,7 @@ function applyUrl() {
   ["start", "end"].forEach((id) => { $("#" + id).value = search.get(id) || ""; });
   if (!search.has("start") && !search.has("end")) {
     quickRange("7");
-    const sevenDayButton = $('.quick-buttons button[data-range="7"]');
-    if (sevenDayButton) sevenDayButton.classList.add("active");
+    $("#quickRange").value = "7";
   }
   ["type", "line", "process"].forEach((name) => {
     const values = search.getAll(name);
@@ -484,8 +529,8 @@ function renderKpis(data) {
 }
 
 function renderAlertButtons() {
-  const noticeCount = state.alerts.filter((alert) => alert.level === "notice").length;
-  const warningCount = state.alerts.filter((alert) => alert.level !== "notice").length;
+  const noticeCount = groupAlertsByProcess(state.alerts.filter((alert) => alert.level === "notice")).length;
+  const warningCount = groupAlertsByProcess(state.alerts.filter((alert) => alert.level !== "notice")).length;
   const notice = $("#noticeButton");
   const warning = $("#warningButton");
   notice.textContent = `알림 ${noticeCount}`;
@@ -520,7 +565,16 @@ function showAlertModal(level = null) {
     </div>
   `;
   }).join("");
-  modal(title, `<div class="alert-list"><div class="alert-actions top"><button type="button" class="ghost" onclick="acknowledgeVisibleAlerts('${level || ""}')">현재 목록 확인 완료</button></div>${rows}</div>`);
+  $("#alertDrawerEyebrow").textContent = level === "notice" ? "알림" : "경고";
+  $("#alertDrawerTitle").textContent = title;
+  $("#alertDrawerBody").innerHTML = `<div class="alert-actions top"><button type="button" class="ghost" onclick="acknowledgeVisibleAlerts('${level || ""}')">현재 목록 확인 완료</button></div>${rows}`;
+  $("#alertDrawer").classList.add("open");
+  $("#alertDrawer").setAttribute("aria-hidden", "false");
+}
+
+function closeAlertDrawer() {
+  $("#alertDrawer").classList.remove("open");
+  $("#alertDrawer").setAttribute("aria-hidden", "true");
 }
 
 function groupAlertsByProcess(alerts) {
@@ -545,8 +599,7 @@ function alertDetail(alert) {
 
 function applyAlertObject(alert) {
   if (!alert) return;
-  const dialog = $("#modal");
-  dialog.close("filter");
+  closeAlertDrawer();
   setRadioValue("type", alert.type);
   linkedFilters();
   setRadioValue("line", alert.line);
@@ -562,7 +615,8 @@ function refreshAlertsAfterAcknowledge(message) {
   chartTrend(state.trends);
   renderDailyMain(state.trends);
   if (state.rows.length) renderDataTable();
-  $("#modal").close("acknowledged");
+  closeAlertDrawer();
+  if ($("#modal").open) $("#modal").close("acknowledged");
   toast(message);
 }
 
@@ -601,11 +655,13 @@ window.acknowledgeAllAlerts = () => {
   state.alerts.forEach((alert) => acknowledged.add(alert.id));
   saveAcknowledgedAlerts(acknowledged);
   state.alerts = [];
+  state.alertModalGroups = [];
   renderAlertButtons();
   chartTrend(state.trends);
   renderDailyMain(state.trends);
   if (state.rows.length) renderDataTable();
-  $("#modal").close("acknowledged");
+  closeAlertDrawer();
+  if ($("#modal").open) $("#modal").close("acknowledged");
   toast("모든 알림을 확인 완료했습니다");
 };
 
@@ -616,11 +672,13 @@ window.acknowledgeVisibleAlerts = (level) => {
   saveAcknowledgedAlerts(acknowledged);
   const visibleIds = new Set(visible.map((alert) => alert.id));
   state.alerts = state.alerts.filter((alert) => !visibleIds.has(alert.id));
+  state.alertModalGroups = [];
   renderAlertButtons();
   chartTrend(state.trends);
   renderDailyMain(state.trends);
   if (state.rows.length) renderDataTable();
-  $("#modal").close("acknowledged");
+  closeAlertDrawer();
+  if ($("#modal").open) $("#modal").close("acknowledged");
   toast("현재 목록을 확인 완료했습니다");
 };
 
