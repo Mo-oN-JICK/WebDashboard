@@ -142,6 +142,12 @@ function selectedMetrics() {
   return $$("#metricFilter input:checked").map((input) => input.value);
 }
 
+function updateMetricCount() {
+  const count = selectedMetrics().length;
+  const target = $("#metricCount");
+  if (target) target.textContent = count ? `${count}개` : "없음";
+}
+
 function params() {
   const search = new URLSearchParams();
   ["start", "end"].forEach((id) => {
@@ -178,6 +184,7 @@ function hydrateOptions() {
     input.value = state.options.settings[input.name] || "";
   });
   updateFilterCounts();
+  updateMetricCount();
 }
 
 function renderFilterOptions(name, values) {
@@ -209,9 +216,9 @@ function renderProcessTree() {
         .sort((a, b) => a.processName.localeCompare(b.processName))
         .map((process) => `<button type="button" class="process-leaf ${selectedProcess === process.processName && selectedLine === process.line && selectedType === process.type ? "active" : ""}" data-type="${esc(process.type)}" data-line="${esc(process.line)}" data-process="${esc(process.processName)}">${esc(process.processName)}${process.status ? `<small>${esc(process.status)}</small>` : ""}</button>`)
         .join("");
-      return `<details class="tree-line" ${selectedLine === line || selectedType === type ? "open" : ""}><summary><button type="button" class="${selectedLine === line && selectedType === type && !selectedProcess ? "active" : ""}" data-type="${esc(type)}" data-line="${esc(line)}">${esc(line)}</button></summary><div>${processHtml}</div></details>`;
+      return `<details class="tree-line" ${selectedLine === line || selectedType === type ? "open" : ""}><summary><span class="tree-toggle" aria-hidden="true"></span><button type="button" class="${selectedLine === line && selectedType === type && !selectedProcess ? "active" : ""}" data-type="${esc(type)}" data-line="${esc(line)}">${esc(line)}</button></summary><div class="tree-children">${processHtml}</div></details>`;
     }).join("");
-    return `<details class="tree-type" ${selectedType === type ? "open" : ""}><summary><button type="button" class="${selectedType === type && !selectedLine && !selectedProcess ? "active" : ""}" data-type="${esc(type)}">${esc(type)}</button></summary>${lineHtml}</details>`;
+    return `<details class="tree-type" ${selectedType === type ? "open" : ""}><summary><span class="tree-toggle" aria-hidden="true"></span><button type="button" class="${selectedType === type && !selectedLine && !selectedProcess ? "active" : ""}" data-type="${esc(type)}">${esc(type)}</button></summary><div class="tree-children">${lineHtml}</div></details>`;
   }).join("");
   target.innerHTML = html || `<div class="empty">등록된 공정이 없습니다</div>`;
 }
@@ -277,7 +284,7 @@ function bind() {
   });
   $("#resetFilters").onclick = () => {
     ["start", "end"].forEach((id) => { $("#" + id).value = ""; });
-    $$(`.filter-menu input`).forEach((input) => { input.checked = false; });
+    $$(`#hiddenProcessFilters input`).forEach((input) => { input.checked = false; });
     hydrateOptions();
     updateFilterCounts();
     updateTrendTitle();
@@ -316,6 +323,7 @@ function bind() {
     if (open) positionFilterMenu(open);
   }, true);
   $("#metricFilter").onchange = () => {
+    updateMetricCount();
     chartTrend(state.trends);
     applyFiltersImmediately(false);
   };
@@ -341,10 +349,6 @@ function bind() {
   $("#saveBulkText").onclick = saveBulkText;
   $("#newProcess").onclick = () => editProcess();
   $("#deleteSelectedProcesses").onclick = deleteSelectedProcesses;
-  $("#applyProcessFilter").onclick = () => {
-    $(".process-filter-menu").open = false;
-    applyFiltersImmediately();
-  };
   $("#addProcessFromEntry").onclick = () => editProcess(null, "entry");
   $("#newUser").onclick = () => editUser();
   $("#importForm").onsubmit = importFile;
@@ -702,15 +706,17 @@ function isAlertRow(row) {
 
 function renderDailyMain(rows) {
   const dates = alertDates();
-  renderTable("#dailyMainTable", ["날짜", "총체결", "NG", "Etc", "Etc%", "Cluster", "비고"], rows.map((row) => [
-    noteDate(row, dates.has(row.date)),
-    num(row.totalCount),
-    num(row.ngCount),
-    num(row.etcCount),
-    warnPct(row.etcRate, "etc_rate_threshold"),
-    num(row.clusterCount),
-    esc(row.note),
-  ]));
+  const orderedRows = [...rows].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const headers = ["구분", ...orderedRows.map((row) => noteDate(row, dates.has(row.date)))];
+  const mainRows = [
+    ["총체결", ...orderedRows.map((row) => num(row.totalCount))],
+    ["NG", ...orderedRows.map((row) => num(row.ngCount))],
+    ["Etc", ...orderedRows.map((row) => num(row.etcCount))],
+    ["Etc%", ...orderedRows.map((row) => warnPct(row.etcRate, "etc_rate_threshold"))],
+    ["Cluster", ...orderedRows.map((row) => num(row.clusterCount))],
+    ["비고", ...orderedRows.map((row) => esc(row.note || ""))],
+  ];
+  renderTable("#dailyMainTable", headers, mainRows);
 }
 
 function chart(id, type, data, options = {}) {
@@ -795,9 +801,12 @@ function positionFilterMenu(details) {
   const width = details.classList.contains("process-filter-menu")
     ? Math.min(760, window.innerWidth - 24)
     : Math.max(230, rect.width);
+  const maxHeight = details.classList.contains("process-filter-menu") ? 420 : 300;
+  const menuHeight = Math.min(menu.scrollHeight || maxHeight, maxHeight, window.innerHeight - 24);
   menu.style.width = `${width}px`;
+  menu.style.maxHeight = `${maxHeight}px`;
   menu.style.left = `${Math.min(rect.left, window.innerWidth - width - 12)}px`;
-  menu.style.top = `${rect.bottom + 6}px`;
+  menu.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - menuHeight - 12))}px`;
 }
 
 function chartTrend(rows) {

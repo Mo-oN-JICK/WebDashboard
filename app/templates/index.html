@@ -56,24 +56,19 @@
           <option value="21">3주</option>
           <option value="28">4주</option>
         </select>
-        <details class="filter-menu process-filter-menu" data-filter="processGroup">
-          <summary>공정 필터 <b id="typeCount">전체</b><b id="lineCount">전체</b><b id="processCount">전체</b></summary>
-          <div class="menu-options combined-options">
-            <section><h4>Type</h4><div id="typeOptions"></div></section>
-            <section><h4>Line</h4><div id="lineOptions"></div></section>
-            <section><h4>Process</h4><div id="processOptions"></div></section>
-            <div class="filter-apply-row"><button id="applyProcessFilter" class="primary" type="button">적용</button></div>
+        <div id="hiddenProcessFilters" hidden><div id="typeOptions"></div><div id="lineOptions"></div><div id="processOptions"></div><span id="typeCount"></span><span id="lineCount"></span><span id="processCount"></span></div>
+        <details class="filter-menu metric-filter-menu" data-filter="metric">
+          <summary>그래프 항목 <b id="metricCount">6개</b></summary>
+          <div id="metricFilter" class="menu-options metric-options" aria-label="그래프 구분">
+            <label class="check-option"><input type="checkbox" value="totalCount" checked>총체결</label>
+            <label class="check-option"><input type="checkbox" value="ngCount" checked>NG</label>
+            <label class="check-option"><input type="checkbox" value="ngRate" checked>NG%</label>
+            <label class="check-option"><input type="checkbox" value="etcCount" checked>Etc</label>
+            <label class="check-option"><input type="checkbox" value="etcRate" checked>Etc%</label>
+            <label class="check-option"><input type="checkbox" value="ngEtcStack">NG+Etc</label>
+            <label class="check-option"><input type="checkbox" value="clusterCount" checked>Cluster</label>
           </div>
         </details>
-        <div id="metricFilter" class="metric-toggles" aria-label="그래프 구분">
-          <label><input type="checkbox" value="totalCount" checked>총체결</label>
-          <label><input type="checkbox" value="ngCount" checked>NG</label>
-          <label><input type="checkbox" value="ngRate" checked>NG%</label>
-          <label><input type="checkbox" value="etcCount" checked>Etc</label>
-          <label><input type="checkbox" value="etcRate" checked>Etc%</label>
-          <label><input type="checkbox" value="ngEtcStack">NG+Etc</label>
-          <label><input type="checkbox" value="clusterCount" checked>Cluster</label>
-        </div>
         <button id="resetFilters" class="ghost">초기화</button>
       </section>
 
