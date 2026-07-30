@@ -77,6 +77,20 @@ def test_period_comparison(client):
     assert "totalCount" in data["comparison"]
 
 
+def test_dashboard_alerts_for_consecutive_etc_blank_notes(client):
+    login(client)
+    proc_id = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first().id
+    user = User.query.filter_by(username="admin").first()
+    for day in [date(2026, 8, 1), date(2026, 8, 2), date(2026, 8, 3)]:
+        db.session.add(DailyMeasurement(processId=proc_id, measurementDate=day, totalCount=100, ngCount=0, etcCount=1, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.commit()
+    res = client.get("/api/dashboard?start=2026-08-01&end=2026-08-03")
+    alerts = res.get_json()["alerts"]
+    assert len(alerts) == 1
+    assert alerts[0]["processName"] == "RAJ Middle-Screw"
+    assert alerts[0]["blankNoteDates"] == ["2026-08-01", "2026-08-02", "2026-08-03"]
+
+
 def test_excel_import_validation(app):
     user = User.query.filter_by(username="admin").first()
     rows = [

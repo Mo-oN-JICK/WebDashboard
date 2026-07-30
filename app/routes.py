@@ -125,7 +125,53 @@ def dashboard():
             old = prev.get(key, 0)
             diff = round(val - old, 2)
             comparison[key] = {"previous": old, "diff": diff, "changeRate": 0 if old == 0 else round(diff / old * 100, 1)}
-    return jsonify({"summary": summary, "comparison": comparison})
+    return jsonify({"summary": summary, "comparison": comparison, "alerts": etc_consecutive_alerts(request.args)})
+
+
+def etc_consecutive_alerts(args) -> list[dict]:
+    threshold = 0.5
+    setting = AppSetting.query.get("etc_consecutive_threshold_count")
+    try:
+        consecutive_count = max(1, int(float(setting.value if setting else "3")))
+    except (TypeError, ValueError):
+        consecutive_count = 3
+    rows = filtered_query(args).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
+    alerts = []
+    grouped: dict[int, list[DailyMeasurement]] = {}
+    for row in rows:
+        grouped.setdefault(row.processId, []).append(row)
+
+    def append_alert(streak: list[DailyMeasurement]) -> None:
+        if len(streak) < consecutive_count:
+            return
+        blank_rows = [item for item in streak if not (item.note or "").strip()]
+        if not blank_rows:
+            return
+        first = streak[0]
+        alerts.append(
+            {
+                "processId": first.processId,
+                "type": first.process.type,
+                "line": first.process.line,
+                "processName": first.process.processName,
+                "status": first.process.status,
+                "threshold": threshold,
+                "requiredCount": consecutive_count,
+                "streakDates": [item.measurementDate.isoformat() for item in streak],
+                "blankNoteDates": [item.measurementDate.isoformat() for item in blank_rows],
+            }
+        )
+
+    for process_rows in grouped.values():
+        streak: list[DailyMeasurement] = []
+        for row in process_rows:
+            if rate(row.etcCount, row.totalCount) >= threshold:
+                streak.append(row)
+            else:
+                append_alert(streak)
+                streak = []
+        append_alert(streak)
+    return alerts
 
 
 @bp.get("/api/trends")

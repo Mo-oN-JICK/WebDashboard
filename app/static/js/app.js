@@ -6,6 +6,7 @@ const state = {
   rows: [],
   selectedMeasurements: new Set(),
   selectedProcesses: new Set(),
+  alerts: [],
   trends: [],
   processCompare: [],
   page: 1,
@@ -63,10 +64,12 @@ function toast(message) {
   setTimeout(() => el.remove(), 2600);
 }
 
-function noteDate(row) {
+function noteDate(row, warning = false) {
   const note = String(row.note || "").trim();
+  if (!note && warning) return `<span class="note-date empty-alert" title="Etc% 연속 초과, 비고 공란">${esc(row.date)}</span>`;
   if (!note) return esc(row.date);
-  return `<button type="button" class="note-date has-note" data-note="${esc(note)}" onmouseenter="showNoteTooltip(event, this)" onmousemove="moveNoteTooltip(event)" onmouseleave="hideNoteTooltip()" onfocus="showNoteTooltip(event, this)" onblur="hideNoteTooltip()" onclick="showNote('${encodeURIComponent(note)}')">${esc(row.date)}</button>`;
+  const warningClass = warning ? " alert-note" : "";
+  return `<button type="button" class="note-date has-note${warningClass}" data-note="${esc(note)}" onmouseenter="showNoteTooltip(event, this)" onmousemove="moveNoteTooltip(event)" onmouseleave="hideNoteTooltip()" onfocus="showNoteTooltip(event, this)" onblur="hideNoteTooltip()" onclick="showNote('${encodeURIComponent(note)}')">${esc(row.date)}</button>`;
 }
 
 function showNoteTooltipText(event, note) {
@@ -255,6 +258,8 @@ function bind() {
     chartTrend(state.trends);
     applyFiltersImmediately(false);
   };
+  $("#noticeButton").onclick = showAlertModal;
+  $("#warningButton").onclick = showAlertModal;
   $("#globalSearch").oninput = () => { state.page = 1; renderDataTable(); };
   $("#pageSize").onchange = (event) => { state.pageSize = Number(event.target.value); renderDataTable(); };
   $("#processSearch").oninput = loadProcesses;
@@ -417,10 +422,13 @@ async function loadDashboard() {
   ]);
   state.trends = trends;
   state.processCompare = processCompare;
+  state.alerts = dashboard.alerts || [];
   renderDailyMain(trends);
   updateTrendTitle();
   chartTrend(trends);
   renderKpis(dashboard);
+  renderAlertButtons();
+  if (state.rows.length) renderDataTable();
   renderProcessRank();
 }
 
@@ -457,9 +465,70 @@ function renderKpis(data) {
   }).join("");
 }
 
+function renderAlertButtons() {
+  const count = state.alerts.length;
+  const notice = $("#noticeButton");
+  const warning = $("#warningButton");
+  notice.textContent = `알림 ${count}`;
+  warning.textContent = `경고 ${count}`;
+  notice.disabled = count === 0;
+  warning.disabled = count === 0;
+  notice.classList.toggle("active", count > 0);
+  warning.classList.toggle("danger-button", count > 0);
+}
+
+function showAlertModal() {
+  if (!state.alerts.length) {
+    toast("표시할 알림이 없습니다");
+    return;
+  }
+  const rows = state.alerts.map((alert, index) => `
+    <button type="button" class="alert-item" onclick="applyAlertFilter(${index})">
+      <strong>${esc(alert.type)} / ${esc(alert.line)} / ${esc(alert.processName)}</strong>
+      <span>Etc% ${alert.threshold}% 이상 ${alert.requiredCount}회 연속</span>
+      <small>비고 공란 날짜: ${alert.blankNoteDates.map(esc).join(", ")}</small>
+    </button>
+  `).join("");
+  modal("생산품질 경고", `<div class="alert-list">${rows}</div>`);
+}
+
+window.applyAlertFilter = (index) => {
+  const alert = state.alerts[index];
+  if (!alert) return;
+  const dialog = $("#modal");
+  dialog.close("filter");
+  setRadioValue("type", alert.type);
+  linkedFilters();
+  setRadioValue("line", alert.line);
+  linkedFilters();
+  setRadioValue("process", alert.processName);
+  updateFilterCounts();
+  updateTrendTitle();
+  applyFiltersImmediately();
+};
+
+function setRadioValue(name, value) {
+  const input = $$(`input[name="${name}Filter"]`).find((item) => item.value === value) || $(`input[name="${name}Filter"][value=""]`);
+  if (input) input.checked = true;
+}
+
+function alertDates() {
+  return new Set(state.alerts.flatMap((alert) => alert.blankNoteDates || []));
+}
+
+function isAlertRow(row) {
+  return state.alerts.some((alert) => (
+    alert.type === row.type
+    && alert.line === row.line
+    && alert.processName === row.processName
+    && (alert.blankNoteDates || []).includes(row.date)
+  ));
+}
+
 function renderDailyMain(rows) {
+  const dates = alertDates();
   renderTable("#dailyMainTable", ["날짜", "총체결", "NG", "Etc", "Etc%", "Cluster", "비고"], rows.map((row) => [
-    noteDate(row),
+    noteDate(row, dates.has(row.date)),
     num(row.totalCount),
     num(row.ngCount),
     num(row.etcCount),
@@ -492,12 +561,13 @@ const noteDateHighlightPlugin = {
   id: "noteDateHighlight",
   beforeDraw(chartInstance) {
     const notes = chartInstance.options.plugins.noteDateHighlight?.notes || {};
+    const alertDateSet = new Set(chartInstance.options.plugins.noteDateHighlight?.alertDates || []);
     const xScale = chartInstance.scales.x;
     if (!xScale) return;
     const ctx = chartInstance.ctx;
     ctx.save();
-    Object.entries(notes).forEach(([date, note]) => {
-      if (!note) return;
+    const dates = new Set([...Object.keys(notes), ...alertDateSet]);
+    dates.forEach((date) => {
       const index = chartInstance.data.labels.indexOf(date);
       if (index < 0) return;
       const x = xScale.getPixelForValue(index);
@@ -505,9 +575,10 @@ const noteDateHighlightPlugin = {
       const textWidth = ctx.measureText(date).width;
       const width = Math.max(78, textWidth + 18);
       roundRect(ctx, x - width / 2, y - 2, width, 22, 6);
-      ctx.fillStyle = "rgba(255,176,32,.16)";
+      const isAlert = alertDateSet.has(date);
+      ctx.fillStyle = isAlert ? "rgba(255,107,107,.18)" : "rgba(255,176,32,.16)";
       ctx.fill();
-      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--warn");
+      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue(isAlert ? "--bad" : "--warn");
       ctx.lineWidth = 1;
       ctx.stroke();
     });
@@ -548,6 +619,11 @@ function positionFilterMenu(details) {
 function chartTrend(rows) {
   const metrics = selectedMetrics();
   const noteMap = Object.fromEntries(rows.filter((row) => String(row.note || "").trim()).map((row) => [row.date, String(row.note).trim()]));
+  const alertDateList = [...alertDates()];
+  const chartTooltipMap = { ...noteMap };
+  alertDateList.forEach((date) => {
+    chartTooltipMap[date] ??= "Etc% 연속 초과, 비고 공란";
+  });
   const hasNgEtcStack = metrics.includes("ngEtcStack");
   const lineCountMetrics = metrics.filter((metric) => metric !== "ngEtcStack" && !metric.includes("Rate"));
   const stackedMax = hasNgEtcStack ? Math.max(...rows.map((row) => Number(row.ngCount || 0) + Number(row.etcCount || 0)), 0) : 0;
@@ -602,12 +678,27 @@ function chartTrend(rows) {
       order: 1,
     });
   });
+  if (metrics.includes("etcRate")) {
+    datasets.push({
+      type: "line",
+      label: "Etc% 기준 0.5%",
+      data: rows.map(() => 0.5),
+      borderColor: "#ff3b3b",
+      backgroundColor: "#ff3b3b",
+      borderWidth: 2,
+      borderDash: [6, 5],
+      pointRadius: 0,
+      tension: 0,
+      yAxisID: "pct",
+      order: 0,
+    });
+  }
   const trendChart = chart("#trendChart", "line", {
     labels: rows.map((row) => row.date),
     datasets,
   }, {
     plugins: {
-      noteDateHighlight: { notes: noteMap },
+      noteDateHighlight: { notes: noteMap, alertDates: alertDateList },
     },
     scales: {
       count: { position: "left", stacked: false, ...countScale, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
@@ -616,7 +707,7 @@ function chartTrend(rows) {
       x: { stacked: false, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },
   });
-  bindTrendNoteHover(trendChart, noteMap);
+  bindTrendNoteHover(trendChart, chartTooltipMap);
 }
 
 function bindTrendNoteHover(chartInstance, noteMap) {
@@ -737,7 +828,7 @@ function renderDataTable() {
   const visibleIds = rows.map((row) => row.id);
   renderTable("#dataTable", [selectionHead("measurement", visibleIds), "날짜", "Line", "Type", "Process", "현황", "총체결", "NG", "NG율", "Etc", "Etc%", "Cluster", "비고", "관리"], rows.map((row) => [
     selectionCell("measurement", row.id),
-    noteDate(row),
+    noteDate(row, isAlertRow(row)),
     row.line,
     row.type,
     row.processName,
