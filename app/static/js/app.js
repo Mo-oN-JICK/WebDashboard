@@ -64,6 +64,23 @@ function toast(message) {
   setTimeout(() => el.remove(), 2600);
 }
 
+function acknowledgedAlerts() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem("qualityDashboardAcknowledgedAlerts") || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveAcknowledgedAlerts(ids) {
+  localStorage.setItem("qualityDashboardAcknowledgedAlerts", JSON.stringify([...ids]));
+}
+
+function activeAlerts(alerts) {
+  const acknowledged = acknowledgedAlerts();
+  return alerts.filter((alert) => !acknowledged.has(alert.id));
+}
+
 function noteDate(row, warning = false) {
   const note = String(row.note || "").trim();
   if (!note && warning) return `<span class="note-date empty-alert" title="Etc% 연속 초과, 비고 공란">${esc(row.date)}</span>`;
@@ -422,7 +439,7 @@ async function loadDashboard() {
   ]);
   state.trends = trends;
   state.processCompare = processCompare;
-  state.alerts = dashboard.alerts || [];
+  state.alerts = activeAlerts(dashboard.alerts || []);
   renderDailyMain(trends);
   updateTrendTitle();
   chartTrend(trends);
@@ -483,13 +500,24 @@ function showAlertModal() {
     return;
   }
   const rows = state.alerts.map((alert, index) => `
-    <button type="button" class="alert-item" onclick="applyAlertFilter(${index})">
+    <div class="alert-item">
       <strong>${esc(alert.type)} / ${esc(alert.line)} / ${esc(alert.processName)}</strong>
-      <span>Etc% ${alert.threshold}% 이상 ${alert.requiredCount}회 연속</span>
-      <small>비고 공란 날짜: ${alert.blankNoteDates.map(esc).join(", ")}</small>
-    </button>
+      <span>${esc(alert.title || "생산품질 경고")}</span>
+      <small>${alertDetail(alert)}</small>
+      <div class="alert-actions"><button type="button" class="ghost" onclick="applyAlertFilter(${index})">필터 적용</button><button type="button" class="primary" onclick="acknowledgeAlert(${index})">확인 완료</button></div>
+    </div>
   `).join("");
-  modal("생산품질 경고", `<div class="alert-list">${rows}</div>`);
+  modal("생산품질 경고", `<div class="alert-list"><div class="alert-actions top"><button type="button" class="ghost" onclick="acknowledgeAllAlerts()">전체 확인 완료</button></div>${rows}</div>`);
+}
+
+function alertDetail(alert) {
+  if (alert.alertType === "etc_spike") {
+    return `${esc(alert.previousDate)} ${pct(alert.previousEtcRate)} -> ${esc(alert.date)} ${pct(alert.etcRate)} / 증가폭 ${pct(alert.increase)}`;
+  }
+  if (alert.alertType === "missing_data") {
+    return `마지막 입력일: ${esc(alert.lastInputDate)} / 경과일: ${alert.daysSince === null ? "미입력" : `${fmt(alert.daysSince)}일`}`;
+  }
+  return `비고 공란 날짜: ${(alert.blankNoteDates || []).map(esc).join(", ")}`;
 }
 
 window.applyAlertFilter = (index) => {
@@ -505,6 +533,34 @@ window.applyAlertFilter = (index) => {
   updateFilterCounts();
   updateTrendTitle();
   applyFiltersImmediately();
+};
+
+window.acknowledgeAlert = (index) => {
+  const alert = state.alerts[index];
+  if (!alert) return;
+  const acknowledged = acknowledgedAlerts();
+  acknowledged.add(alert.id);
+  saveAcknowledgedAlerts(acknowledged);
+  state.alerts = state.alerts.filter((item) => item.id !== alert.id);
+  renderAlertButtons();
+  chartTrend(state.trends);
+  renderDailyMain(state.trends);
+  if (state.rows.length) renderDataTable();
+  $("#modal").close("acknowledged");
+  toast("알림을 확인 완료했습니다");
+};
+
+window.acknowledgeAllAlerts = () => {
+  const acknowledged = acknowledgedAlerts();
+  state.alerts.forEach((alert) => acknowledged.add(alert.id));
+  saveAcknowledgedAlerts(acknowledged);
+  state.alerts = [];
+  renderAlertButtons();
+  chartTrend(state.trends);
+  renderDailyMain(state.trends);
+  if (state.rows.length) renderDataTable();
+  $("#modal").close("acknowledged");
+  toast("모든 알림을 확인 완료했습니다");
 };
 
 function setRadioValue(name, value) {

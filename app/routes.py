@@ -125,7 +125,11 @@ def dashboard():
             old = prev.get(key, 0)
             diff = round(val - old, 2)
             comparison[key] = {"previous": old, "diff": diff, "changeRate": 0 if old == 0 else round(diff / old * 100, 1)}
-    return jsonify({"summary": summary, "comparison": comparison, "alerts": etc_consecutive_alerts(request.args)})
+    return jsonify({"summary": summary, "comparison": comparison, "alerts": quality_alerts(request.args)})
+
+
+def quality_alerts(args) -> list[dict]:
+    return etc_consecutive_alerts(args) + etc_daily_increase_alerts(args) + stale_process_alerts(args)
 
 
 def etc_consecutive_alerts(args) -> list[dict]:
@@ -150,6 +154,9 @@ def etc_consecutive_alerts(args) -> list[dict]:
         first = streak[0]
         alerts.append(
             {
+                "id": f"etc_streak:{first.processId}:{consecutive_count}:{','.join(item.measurementDate.isoformat() for item in streak)}",
+                "alertType": "etc_streak",
+                "title": f"Etc% {threshold}% 이상 {consecutive_count}회 연속",
                 "processId": first.processId,
                 "type": first.process.type,
                 "line": first.process.line,
@@ -172,6 +179,99 @@ def etc_consecutive_alerts(args) -> list[dict]:
                 streak = []
         append_alert(streak)
     return alerts
+
+
+def etc_daily_increase_alerts(args) -> list[dict]:
+    threshold = setting_float("etc_daily_increase_threshold", 0)
+    if threshold <= 0:
+        return []
+    rows = filtered_query(args).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
+    grouped: dict[int, list[DailyMeasurement]] = {}
+    for row in rows:
+        grouped.setdefault(row.processId, []).append(row)
+    alerts = []
+    for process_rows in grouped.values():
+        previous = None
+        for row in process_rows:
+            current_rate = rate(row.etcCount, row.totalCount)
+            if previous:
+                previous_rate = rate(previous.etcCount, previous.totalCount)
+                diff = round(current_rate - previous_rate, 2)
+                if diff >= threshold:
+                    alerts.append(
+                        {
+                            "id": f"etc_spike:{row.processId}:{previous.measurementDate.isoformat()}:{row.measurementDate.isoformat()}:{threshold}",
+                            "alertType": "etc_spike",
+                            "title": f"Etc% 하루 증가 +{threshold}% 이상",
+                            "processId": row.processId,
+                            "type": row.process.type,
+                            "line": row.process.line,
+                            "processName": row.process.processName,
+                            "status": row.process.status,
+                            "threshold": threshold,
+                            "date": row.measurementDate.isoformat(),
+                            "previousDate": previous.measurementDate.isoformat(),
+                            "etcRate": current_rate,
+                            "previousEtcRate": previous_rate,
+                            "increase": diff,
+                            "blankNoteDates": [row.measurementDate.isoformat()] if not (row.note or "").strip() else [],
+                            "streakDates": [previous.measurementDate.isoformat(), row.measurementDate.isoformat()],
+                        }
+                    )
+            previous = row
+    return alerts
+
+
+def stale_process_alerts(args) -> list[dict]:
+    threshold_days = int(setting_float("missing_data_days_threshold", 0))
+    if threshold_days <= 0:
+        return []
+    today = datetime.now(KST).date()
+    query = ProcessMaster.query.filter_by(isActive=True)
+    for key, col in {"line": ProcessMaster.line, "type": ProcessMaster.type, "process": ProcessMaster.processName}.items():
+        values = arg_values(args, key)
+        if values:
+            query = query.filter(col.in_(values))
+    alerts = []
+    for proc in query.order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName).all():
+        last = DailyMeasurement.query.filter_by(processId=proc.id).order_by(desc(DailyMeasurement.measurementDate)).first()
+        days_since = None if not last else (today - last.measurementDate).days
+        if last and days_since < threshold_days:
+            continue
+        last_date = last.measurementDate.isoformat() if last else "미입력"
+        alerts.append(
+            {
+                "id": f"missing_data:{proc.id}:{last_date}:{threshold_days}",
+                "alertType": "missing_data",
+                "title": f"데이터 미입력 {threshold_days}일 경과",
+                "processId": proc.id,
+                "type": proc.type,
+                "line": proc.line,
+                "processName": proc.processName,
+                "status": proc.status,
+                "thresholdDays": threshold_days,
+                "lastInputDate": last_date,
+                "daysSince": days_since,
+                "blankNoteDates": [],
+                "streakDates": [],
+            }
+        )
+    return alerts
+
+
+def setting_float(key: str, default: float) -> float:
+    setting = AppSetting.query.get(key)
+    try:
+        return float(setting.value if setting else default)
+    except (TypeError, ValueError):
+        return default
+
+
+def arg_values(args, key: str) -> list[str]:
+    values = args.getlist(key) if hasattr(args, "getlist") else args.get(key, [])
+    if isinstance(values, str):
+        values = [value for value in values.split(",") if value]
+    return values
 
 
 @bp.get("/api/trends")

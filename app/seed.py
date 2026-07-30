@@ -22,6 +22,8 @@ def seed_defaults() -> None:
         "ng_increase_threshold": "30",
         "total_drop_threshold": "50",
         "etc_consecutive_threshold_count": "3",
+        "etc_daily_increase_threshold": "0",
+        "missing_data_days_threshold": "0",
     }
     for key, value in defaults.items():
         if not AppSetting.query.get(key):

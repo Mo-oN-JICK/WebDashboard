@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 
 from app import create_app, db
-from app.models import DailyMeasurement, ProcessMaster, User
+from app.models import AppSetting, DailyMeasurement, ProcessMaster, User
 from app.services import import_rows, rate, validate_measurement
 
 
@@ -89,6 +89,38 @@ def test_dashboard_alerts_for_consecutive_etc_blank_notes(client):
     assert len(alerts) == 1
     assert alerts[0]["processName"] == "RAJ Middle-Screw"
     assert alerts[0]["blankNoteDates"] == ["2026-08-01", "2026-08-02", "2026-08-03"]
+
+
+def test_dashboard_alerts_for_daily_etc_spike(client):
+    login(client)
+    setting = AppSetting.query.get("etc_daily_increase_threshold")
+    setting.value = "0.5"
+    proc_id = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first().id
+    user = User.query.filter_by(username="admin").first()
+    db.session.add(DailyMeasurement(processId=proc_id, measurementDate=date(2026, 8, 4), totalCount=1000, ngCount=0, etcCount=1, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.add(DailyMeasurement(processId=proc_id, measurementDate=date(2026, 8, 5), totalCount=1000, ngCount=0, etcCount=10, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.commit()
+    res = client.get("/api/dashboard?start=2026-08-04&end=2026-08-05")
+    alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "etc_spike"]
+    assert len(alerts) == 1
+    assert alerts[0]["date"] == "2026-08-05"
+    assert alerts[0]["increase"] == 0.9
+
+
+def test_dashboard_alerts_for_stale_process(client):
+    login(client)
+    AppSetting.query.get("missing_data_days_threshold").value = "1"
+    proc = ProcessMaster(type="FAS4.0", line="RC", processName="Stale Process", status="", isActive=True)
+    db.session.add(proc)
+    db.session.flush()
+    user = User.query.filter_by(username="admin").first()
+    old_day = datetime.now().date() - timedelta(days=3)
+    db.session.add(DailyMeasurement(processId=proc.id, measurementDate=old_day, totalCount=100, ngCount=0, etcCount=0, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.commit()
+    res = client.get("/api/dashboard?type=FAS4.0&line=RC&process=Stale Process")
+    alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "missing_data"]
+    assert len(alerts) == 1
+    assert alerts[0]["processName"] == "Stale Process"
 
 
 def test_excel_import_validation(app):
