@@ -63,6 +63,40 @@ function toast(message) {
   setTimeout(() => el.remove(), 2600);
 }
 
+function noteDate(row) {
+  const note = String(row.note || "").trim();
+  if (!note) return esc(row.date);
+  return `<button type="button" class="note-date has-note" data-note="${esc(note)}" onmouseenter="showNoteTooltip(event, this)" onmousemove="moveNoteTooltip(event)" onmouseleave="hideNoteTooltip()" onfocus="showNoteTooltip(event, this)" onblur="hideNoteTooltip()" onclick="showNote('${encodeURIComponent(note)}')">${esc(row.date)}</button>`;
+}
+
+window.showNoteTooltip = (event, target) => {
+  let tooltip = $("#noteTooltip");
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.id = "noteTooltip";
+    tooltip.className = "note-tooltip";
+    document.body.append(tooltip);
+  }
+  tooltip.textContent = target.dataset.note || "";
+  tooltip.classList.add("active");
+  moveNoteTooltip(event);
+};
+
+window.moveNoteTooltip = (event) => {
+  const tooltip = $("#noteTooltip");
+  if (!tooltip) return;
+  const margin = 14;
+  const width = Math.min(320, window.innerWidth - 24);
+  tooltip.style.maxWidth = `${width}px`;
+  const left = Math.min(event.clientX + margin, window.innerWidth - width - 12);
+  tooltip.style.left = `${Math.max(12, left)}px`;
+  tooltip.style.top = `${Math.min(event.clientY + margin, window.innerHeight - tooltip.offsetHeight - 12)}px`;
+};
+
+window.hideNoteTooltip = () => {
+  $("#noteTooltip")?.classList.remove("active");
+};
+
 async function api(url, options = {}) {
   const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
   if (!res.ok) {
@@ -415,7 +449,7 @@ function renderKpis(data) {
 
 function renderDailyMain(rows) {
   renderTable("#dailyMainTable", ["날짜", "총체결", "NG", "Etc", "Etc%", "Cluster", "비고"], rows.map((row) => [
-    row.date,
+    noteDate(row),
     num(row.totalCount),
     num(row.ngCount),
     num(row.etcCount),
@@ -613,7 +647,7 @@ function renderDataTable() {
   const visibleIds = rows.map((row) => row.id);
   renderTable("#dataTable", [selectionHead("measurement", visibleIds), "날짜", "Line", "Type", "Process", "현황", "총체결", "NG", "NG율", "Etc", "Etc%", "Cluster", "비고", "관리"], rows.map((row) => [
     selectionCell("measurement", row.id),
-    row.date,
+    noteDate(row),
     row.line,
     row.type,
     row.processName,
