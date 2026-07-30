@@ -618,7 +618,16 @@ function renderDailyMain(rows) {
 function chart(id, type, data, options = {}) {
   state.charts[id]?.destroy();
   const basePlugins = {
-    legend: { position: "bottom", labels: { color: getComputedStyle(document.body).getPropertyValue("--text") } },
+    legend: {
+      position: "bottom",
+      labels: {
+        color: getComputedStyle(document.body).getPropertyValue("--text"),
+        filter: (item, chartData) => !chartData.datasets[item.datasetIndex]?.isGuideLine,
+      },
+    },
+    tooltip: {
+      filter: (item) => !item.dataset.isGuideLine,
+    },
   };
   state.charts[id] = new Chart($(id), {
     type,
@@ -758,7 +767,8 @@ function chartTrend(rows) {
   if (metrics.includes("etcRate")) {
     datasets.push({
       type: "line",
-      label: "Etc% 기준 0.5%",
+      label: "",
+      isGuideLine: true,
       data: rows.map(() => 0.5),
       borderColor: "#ff3b3b",
       backgroundColor: "#ff3b3b",
