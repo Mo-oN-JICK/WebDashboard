@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>생산·품질 대시보드 로그인</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="login-body">
+  <main class="login-panel" aria-label="로그인">
+    <div>
+      <p class="eyebrow">Production Quality</p>
+      <h1>생산·품질 데이터 대시보드</h1>
+      <p class="muted">SQLite 파일에 안전하게 저장되는 로컬 실행형 관리 시스템</p>
+    </div>
+    {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
+    <form method="post" class="stack">
+      <label>아이디<input name="username" required autofocus value="admin"></label>
+      <label>비밀번호<input name="password" type="password" required value="admin1234"></label>
+      <button class="primary" type="submit">로그인</button>
+      <p class="muted small">초기 계정: admin / admin1234, 조회자: viewer / viewer1234</p>
+    </form>
+  </main>
+</body>
+</html>

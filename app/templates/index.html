@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>생산·품질 데이터 대시보드</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="dark">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="주 메뉴">
+      <h1>품질관리</h1>
+      <nav>
+        <button data-view="dashboard" class="active">종합 대시보드</button>
+        <button data-view="browse">데이터 조회</button>
+        <button data-view="entry">데이터 입력</button>
+        <button data-view="processes">공정 관리</button>
+        <button data-view="import">데이터 가져오기</button>
+        <button data-view="users">사용자 관리</button>
+        <button data-view="audit">변경 이력</button>
+        <button data-view="settings">설정</button>
+      </nav>
+      <button id="themeToggle" class="ghost">밝은 모드</button>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="pageEyebrow">종합 대시보드</p>
+          <h2 id="pageTitle">날짜별 생산·품질 현황</h2>
+        </div>
+        <div class="topmeta">
+          <span>최종 기준일 <b>{{ last_date }}</b></span>
+          <span>마지막 업데이트 <b>{{ last_update }}</b></span>
+          <span>{{ current_user.name }} ({{ "관리자" if current_user.role == "admin" else "조회자" }})</span>
+          <a class="button ghost" href="{{ url_for('main.logout') }}">로그아웃</a>
+        </div>
+      </header>
+
+      <section class="filters compact-filters" aria-label="공통 필터">
+        <div class="date-range">
+          <input type="date" id="start" aria-label="조회 시작일">
+          <span>~</span>
+          <input type="date" id="end" aria-label="조회 종료일">
+        </div>
+        <div class="quick-buttons" aria-label="빠른 기간">
+          <button data-range="7" class="ghost">7일</button>
+          <button data-range="30" class="ghost">30일</button>
+          <button data-range="month" class="ghost">이번 달</button>
+          <button data-range="prevMonth" class="ghost">지난달</button>
+          <button data-range="all" class="ghost">전체</button>
+        </div>
+        <details class="filter-menu" data-filter="line"><summary>Line <b id="lineCount">전체</b></summary><div id="lineOptions" class="menu-options"></div></details>
+        <details class="filter-menu" data-filter="type"><summary>Type <b id="typeCount">전체</b></summary><div id="typeOptions" class="menu-options"></div></details>
+        <details class="filter-menu" data-filter="process"><summary>Process <b id="processCount">전체</b></summary><div id="processOptions" class="menu-options"></div></details>
+        <details class="filter-menu" data-filter="status"><summary>현황 <b id="statusCount">전체</b></summary><div id="statusOptions" class="menu-options"></div></details>
+        <div id="metricFilter" class="metric-toggles" aria-label="그래프 구분">
+          <label><input type="checkbox" value="totalCount" checked>총체결</label>
+          <label><input type="checkbox" value="ngCount" checked>NG</label>
+          <label><input type="checkbox" value="ngRate" checked>NG%</label>
+          <label><input type="checkbox" value="etcCount" checked>Etc</label>
+          <label><input type="checkbox" value="etcRate" checked>Etc%</label>
+          <label><input type="checkbox" value="clusterCount" checked>Cluster</label>
+        </div>
+        <button id="resetFilters" class="ghost">초기화</button>
+        <button id="applyFilters" class="primary">조회</button>
+      </section>
+
+      <section id="view-dashboard" class="view active">
+        <article class="panel hero-panel">
+          <div class="panel-head">
+            <h3>날짜별 추이 그래프</h3>
+            <div class="panel-actions">
+              <button id="exportXlsxMain" class="ghost">Excel 내보내기</button>
+              <button id="saveTrendPng" class="ghost">PNG 저장</button>
+            </div>
+          </div>
+          <div class="chart-box trend-box"><canvas id="trendChart"></canvas></div>
+        </article>
+        <div class="table-wrap main-table-wrap main-data"><table id="dailyMainTable"></table></div>
+        <div id="kpis" class="kpi-grid skeleton"></div>
+        <article class="panel">
+          <div class="panel-head"><h3>공정 NG율 순위</h3><label>최소 총체결 <input id="minTotal" type="number" min="0" value="0"></label></div>
+          <div class="chart-box small-chart"><canvas id="processChart"></canvas></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h3>공정 비교 순위표</h3></div>
+          <div class="table-wrap"><table id="rankTable"></table></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h3>데이터 누락 확인</h3><button id="exportMissing" class="ghost">Excel 내보내기</button></div>
+          <div class="table-wrap"><table id="missingTable"></table></div>
+        </article>
+      </section>
+
+      <section id="view-browse" class="view">
+        <div class="toolbar">
+          <input id="globalSearch" placeholder="통합 검색">
+          <select id="pageSize"><option>20</option><option>50</option><option>100</option></select>
+          <button id="exportXlsx" class="ghost">Excel 내보내기</button>
+          <button id="exportCsv" class="ghost">CSV 내보내기</button>
+        </div>
+        <article class="panel">
+          <h3>일반 목록 보기</h3>
+          <div class="table-wrap"><table id="dataTable"></table></div>
+          <div id="pager" class="pager"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h3>Excel 형태 보기</h3><button id="toggleDateOrder" class="ghost">날짜 역순</button><button id="savePivot" class="primary admin-only">저장</button></div>
+          <div class="table-wrap pivot-wrap"><table id="pivotTable"></table></div>
+        </article>
+      </section>
+
+      <section id="view-entry" class="view">
+        <div class="grid two">
+          <article class="panel">
+            <h3>날짜별 데이터 등록</h3>
+            <form id="entryForm" class="form-grid">
+              <label>날짜<input type="date" name="measurementDate" required></label>
+              <label>공정<select name="processId" required></select></label>
+              <label>총체결<input name="totalCount" type="number" min="0" required></label>
+              <label>NG<input name="ngCount" type="number" min="0" required></label>
+              <label>Etc<input name="etcCount" type="number" min="0" required></label>
+              <label>Cluster<input name="clusterCount" type="number" min="0" required></label>
+              <label class="wide">비고<textarea name="note" rows="4"></textarea></label>
+              <div class="wide helper">NG율 <b id="ngPreview">0.00%</b> · Etc% <b id="etcPreview">0.00%</b></div>
+              <button class="primary admin-only" type="submit">저장</button>
+            </form>
+          </article>
+          <article class="panel">
+            <h3>텍스트 대량 입력</h3>
+            <label>공정<select id="bulkTextProcess"></select></label>
+            <label class="wide">붙여넣기 데이터<textarea id="bulkText" rows="14" spellcheck="false" placeholder="&#9;2026-07-20&#9;2026-07-21&#10;총체결&#9;1013&#9;5580&#10;NG&#9;15&#9;28&#10;진성&#9;0&#9;0&#10;미검&#9;0&#9;0&#10;과검&#9;0&#9;0&#10;Cluster(Upper)&#9;115&#9;115&#10;Cluster(Lower(Near))&#9;0&#9;0&#10;Cluster(Lower(Far))&#9;0&#9;0&#10;Class&#9;0&#9;0&#10;ETC&#9;0&#9;2"></textarea></label>
+            <div class="toolbar"><button id="previewBulkText" class="ghost">미리보기</button><button id="saveBulkText" class="primary admin-only">대량 저장</button></div>
+            <div class="table-wrap"><table id="bulkTextPreview"></table></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-processes" class="view">
+        <article class="panel"><div class="panel-head"><h3>공정 관리</h3><button id="newProcess" class="primary admin-only">공정 등록</button></div><input id="processSearch" placeholder="공정 검색"><div class="table-wrap"><table id="processTable"></table></div></article>
+      </section>
+      <section id="view-import" class="view">
+        <article class="panel"><h3>Excel 및 CSV 가져오기</h3><form id="importForm" class="form-grid"><label class="wide">파일 선택<input type="file" name="file" accept=".xlsx,.xls,.csv" required></label><label>중복 처리<select name="duplicateMode"><option value="overwrite">기존 데이터 덮어쓰기</option><option value="keep">기존 데이터 유지</option><option value="skip">중복 행 제외</option></select></label><button class="primary admin-only" type="submit">검증 후 저장</button></form><pre id="importResult" class="result"></pre></article>
+      </section>
+      <section id="view-users" class="view">
+        <article class="panel"><div class="panel-head"><h3>사용자 관리</h3><button id="newUser" class="primary admin-only">사용자 등록</button></div><div class="table-wrap"><table id="userTable"></table></div></article>
+      </section>
+      <section id="view-audit" class="view">
+        <article class="panel"><h3>변경 이력</h3><div class="table-wrap"><table id="auditTable"></table></div></article>
+      </section>
+      <section id="view-settings" class="view">
+        <article class="panel"><h3>설정</h3><form id="settingsForm" class="form-grid"><label>NG율 경고 기준(%)<input name="ng_rate_threshold" type="number" step="0.01"></label><label>Etc% 경고 기준(%)<input name="etc_rate_threshold" type="number" step="0.01"></label><label>전일 대비 NG 증가 기준(%)<input name="ng_increase_threshold" type="number" step="1"></label><label>총체결 감소 기준(%)<input name="total_drop_threshold" type="number" step="1"></label><button class="primary admin-only" type="submit">설정 저장</button></form></article>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="modal"><form method="dialog"><h3 id="modalTitle"></h3><div id="modalBody"></div><menu><button value="cancel" class="ghost">취소</button><button id="modalOk" value="ok" class="primary">확인</button></menu></form></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script>window.APP_USER = {role: "{{ current_user.role }}", name: "{{ current_user.name }}"};</script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
