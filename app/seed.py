@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from datetime import date
 
+from flask import current_app
+
 from . import db
 from .models import AppSetting, DailyMeasurement, NoteTemplate, ProcessMaster, StatusOption, User
 
@@ -35,6 +37,10 @@ def seed_defaults() -> None:
         viewer.set_password("viewer1234")
         db.session.add(viewer)
     db.session.flush()
+
+    if not should_seed_sample_data():
+        db.session.commit()
+        return
 
     samples = [
         ("RA", "FAS2.0", "RAJ Middle-Screw", "안정화 상태"),
@@ -69,3 +75,9 @@ def seed_defaults() -> None:
                 )
             )
     db.session.commit()
+
+
+def should_seed_sample_data() -> bool:
+    if current_app.config.get("SEED_SAMPLE_DATA") is True:
+        return True
+    return os.getenv("SEED_SAMPLE_DATA", "").lower() in {"1", "true", "yes", "y"}

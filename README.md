@@ -38,6 +38,8 @@ SECRET_KEY=change-me-in-production
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin1234
 ADMIN_NAME=관리자
+# 샘플 공정/샘플 측정 데이터를 넣고 싶을 때만 사용
+SEED_SAMPLE_DATA=0
 ```
 
 기본 DB는 SQLite 파일입니다. 별도 DB 서버 없이 `instance/quality_dashboard.db`가 자동 생성됩니다.
@@ -140,7 +142,9 @@ Windows 방화벽이 연결을 막는 경우, Python 또는 8000번 포트의 �
 
 ## 데이터 초기화
 
-최초 실행 시 테이블, 초기 관리자, 조회자, 기본 현황, 메모 템플릿, 샘플 공정과 샘플 데이터가 자동 생성됩니다.
+최초 실행 시 테이블, 초기 관리자, 조회자, 기본 현황, 메모 템플릿이 자동 생성됩니다.
+RA / RAJ Middle-Screw 같은 샘플 공정과 샘플 측정 데이터는 기본으로 생성하지 않습니다.
+샘플 데이터가 필요한 테스트 또는 데모 환경에서만 `.env`에 `SEED_SAMPLE_DATA=1`을 추가하세요.
 
 완전히 초기화하려면 서버를 종료한 뒤 아래 파일을 삭제하고 다시 실행합니다.
 

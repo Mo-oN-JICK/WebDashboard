@@ -11,7 +11,7 @@ from app.services import import_rows, rate, validate_measurement
 
 @pytest.fixture()
 def app():
-    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:", "SECRET_KEY": "test"})
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:", "SECRET_KEY": "test", "SEED_SAMPLE_DATA": True})
     with app.app_context():
         yield app
 
@@ -29,6 +29,13 @@ def test_rate_calculation():
     assert rate(15, 1013) == 1.48
     assert rate(2, 5580) == 0.04
     assert rate(3, 0) == 0
+
+
+def test_sample_data_is_opt_in():
+    created = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:", "SECRET_KEY": "test-no-sample"})
+    with created.app_context():
+        assert ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first() is None
+        assert ProcessMaster.query.filter_by(processName="RAJ Middle-Front").first() is None
 
 
 def test_invalid_counts_are_blocked():
