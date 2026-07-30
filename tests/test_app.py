@@ -109,6 +109,20 @@ def test_dashboard_alerts_for_daily_etc_spike(client):
     assert alerts[0]["increase"] == 0.9
 
 
+def test_dashboard_etc_spike_compares_latest_two_only(client):
+    login(client)
+    AppSetting.query.get("etc_daily_increase_threshold").value = "0.5"
+    proc_id = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first().id
+    user = User.query.filter_by(username="admin").first()
+    db.session.add(DailyMeasurement(processId=proc_id, measurementDate=date(2026, 8, 6), totalCount=1000, ngCount=0, etcCount=1, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.add(DailyMeasurement(processId=proc_id, measurementDate=date(2026, 8, 7), totalCount=1000, ngCount=0, etcCount=10, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.add(DailyMeasurement(processId=proc_id, measurementDate=date(2026, 8, 8), totalCount=1000, ngCount=0, etcCount=10, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.commit()
+    res = client.get("/api/dashboard?start=2026-08-06&end=2026-08-08")
+    alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "etc_spike"]
+    assert alerts == []
+
+
 def test_dashboard_alerts_for_stale_process(client):
     login(client)
     AppSetting.query.get("missing_data_days_threshold").value = "1"

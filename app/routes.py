@@ -192,35 +192,34 @@ def etc_daily_increase_alerts(args) -> list[dict]:
         grouped.setdefault(row.processId, []).append(row)
     alerts = []
     for process_rows in grouped.values():
-        previous = None
-        for row in process_rows:
-            current_rate = rate(row.etcCount, row.totalCount)
-            if previous:
-                previous_rate = rate(previous.etcCount, previous.totalCount)
-                diff = round(current_rate - previous_rate, 2)
-                if diff >= threshold:
-                    alerts.append(
-                        {
-                            "id": f"etc_spike:{row.processId}:{previous.measurementDate.isoformat()}:{row.measurementDate.isoformat()}:{threshold}",
-                            "alertType": "etc_spike",
-                            "level": "warning",
-                            "title": f"Etc% 하루 증가 +{threshold}% 이상",
-                            "processId": row.processId,
-                            "type": row.process.type,
-                            "line": row.process.line,
-                            "processName": row.process.processName,
-                            "status": row.process.status,
-                            "threshold": threshold,
-                            "date": row.measurementDate.isoformat(),
-                            "previousDate": previous.measurementDate.isoformat(),
-                            "etcRate": current_rate,
-                            "previousEtcRate": previous_rate,
-                            "increase": diff,
-                            "blankNoteDates": [row.measurementDate.isoformat()] if not (row.note or "").strip() else [],
-                            "streakDates": [previous.measurementDate.isoformat(), row.measurementDate.isoformat()],
-                        }
-                    )
-            previous = row
+        if len(process_rows) < 2:
+            continue
+        previous, row = process_rows[-2], process_rows[-1]
+        current_rate = rate(row.etcCount, row.totalCount)
+        previous_rate = rate(previous.etcCount, previous.totalCount)
+        diff = round(current_rate - previous_rate, 2)
+        if diff >= threshold:
+            alerts.append(
+                {
+                    "id": f"etc_spike:{row.processId}:{previous.measurementDate.isoformat()}:{row.measurementDate.isoformat()}:{threshold}",
+                    "alertType": "etc_spike",
+                    "level": "warning",
+                    "title": f"Etc% 하루 증가 +{threshold}% 이상",
+                    "processId": row.processId,
+                    "type": row.process.type,
+                    "line": row.process.line,
+                    "processName": row.process.processName,
+                    "status": row.process.status,
+                    "threshold": threshold,
+                    "date": row.measurementDate.isoformat(),
+                    "previousDate": previous.measurementDate.isoformat(),
+                    "etcRate": current_rate,
+                    "previousEtcRate": previous_rate,
+                    "increase": diff,
+                    "blankNoteDates": [row.measurementDate.isoformat()] if not (row.note or "").strip() else [],
+                    "streakDates": [previous.measurementDate.isoformat(), row.measurementDate.isoformat()],
+                }
+            )
     return alerts
 
 

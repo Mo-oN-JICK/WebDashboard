@@ -795,6 +795,7 @@ function chartTrend(rows) {
     },
   });
   bindTrendNoteHover(trendChart, chartTooltipMap);
+  bindTrendDateClick(trendChart);
 }
 
 function bindTrendNoteHover(chartInstance, noteMap) {
@@ -810,19 +811,66 @@ function bindTrendNoteHover(chartInstance, noteMap) {
       hideNoteTooltip();
       return;
     }
-    let nearest = null;
-    let nearestDistance = Infinity;
-    chartInstance.data.labels.forEach((date, index) => {
-      if (!noteMap[date]) return;
-      const distance = Math.abs(offsetX - xScale.getPixelForValue(index));
-      if (distance < nearestDistance) {
-        nearest = date;
-        nearestDistance = distance;
-      }
-    });
-    if (nearest && nearestDistance <= 42) showNoteTooltipText(event, noteMap[nearest]);
+    const nearest = nearestTrendDate(chartInstance, event, 42, (date) => noteMap[date]);
+    if (nearest) showNoteTooltipText(event, noteMap[nearest]);
     else hideNoteTooltip();
   };
+}
+
+function bindTrendDateClick(chartInstance) {
+  const canvas = $("#trendChart");
+  canvas.onclick = (event) => {
+    const date = nearestTrendDate(chartInstance, event, 42);
+    if (!date) return;
+    editTrendDateNote(date);
+  };
+}
+
+function nearestTrendDate(chartInstance, event, maxDistance = 42, predicate = null) {
+  const xScale = chartInstance.scales.x;
+  if (!xScale) return null;
+  const rect = chartInstance.canvas.getBoundingClientRect();
+  const offsetX = event.clientX - rect.left;
+  let nearest = null;
+  let nearestDistance = Infinity;
+  chartInstance.data.labels.forEach((date, index) => {
+    if (predicate && !predicate(date)) return;
+    const distance = Math.abs(offsetX - xScale.getPixelForValue(index));
+    if (distance < nearestDistance) {
+      nearest = date;
+      nearestDistance = distance;
+    }
+  });
+  return nearestDistance <= maxDistance ? nearest : null;
+}
+
+function editTrendDateNote(date) {
+  if (!isAdmin) {
+    toast("관리자만 비고를 수정할 수 있습니다");
+    return;
+  }
+  const selectedProcesses = checkedValues("process");
+  if (selectedProcesses.length !== 1) {
+    toast("비고를 작성하려면 Process를 하나 선택하세요");
+    return;
+  }
+  const selectedTypes = checkedValues("type");
+  const selectedLines = checkedValues("line");
+  const row = state.rows.find((item) => (
+    item.date === date
+    && item.processName === selectedProcesses[0]
+    && (!selectedTypes.length || selectedTypes.includes(item.type))
+    && (!selectedLines.length || selectedLines.includes(item.line))
+  ));
+  if (!row) {
+    toast("선택한 날짜의 데이터가 없습니다");
+    return;
+  }
+  modal(`${date} 비고 작성`, `<div class="form-grid"><label class="wide">비고<textarea name="note" rows="6">${esc(row.note)}</textarea></label></div>`, async () => {
+    await api(`/api/measurements/${row.id}`, { method: "PUT", body: JSON.stringify({ note: modalData().note }) });
+    toast("비고를 저장했습니다");
+    refreshAll();
+  });
 }
 
 function renderProcessRank() {
