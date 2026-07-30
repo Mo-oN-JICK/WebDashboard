@@ -69,7 +69,7 @@ function noteDate(row) {
   return `<button type="button" class="note-date has-note" data-note="${esc(note)}" onmouseenter="showNoteTooltip(event, this)" onmousemove="moveNoteTooltip(event)" onmouseleave="hideNoteTooltip()" onfocus="showNoteTooltip(event, this)" onblur="hideNoteTooltip()" onclick="showNote('${encodeURIComponent(note)}')">${esc(row.date)}</button>`;
 }
 
-window.showNoteTooltip = (event, target) => {
+function showNoteTooltipText(event, note) {
   let tooltip = $("#noteTooltip");
   if (!tooltip) {
     tooltip = document.createElement("div");
@@ -77,9 +77,13 @@ window.showNoteTooltip = (event, target) => {
     tooltip.className = "note-tooltip";
     document.body.append(tooltip);
   }
-  tooltip.textContent = target.dataset.note || "";
+  tooltip.textContent = note || "";
   tooltip.classList.add("active");
   moveNoteTooltip(event);
+}
+
+window.showNoteTooltip = (event, target) => {
+  showNoteTooltipText(event, target.dataset.note || "");
 };
 
 window.moveNoteTooltip = (event) => {
@@ -157,16 +161,10 @@ function hydrateOptions() {
 function renderFilterOptions(name, values) {
   const target = $(`#${name}Options`);
   const unique = [...new Set(values)].filter((value) => value !== null && value !== undefined && String(value).trim() !== "").sort();
-  if (name === "process") {
-    target.innerHTML = [
-      `<label class="check-option"><input type="radio" name="${name}Filter" value="" checked>전체</label>`,
-      ...unique.map((value) => `<label class="check-option"><input type="radio" name="${name}Filter" value="${esc(value)}">${esc(value)}</label>`),
-    ].join("");
-    return;
-  }
-  target.innerHTML = unique.map((value) => (
-    `<label class="check-option"><input type="checkbox" name="${name}Filter" value="${esc(value)}">${esc(value)}</label>`
-  )).join("");
+  target.innerHTML = [
+    `<label class="check-option"><input type="radio" name="${name}Filter" value="" checked>전체</label>`,
+    ...unique.map((value) => `<label class="check-option"><input type="radio" name="${name}Filter" value="${esc(value)}">${esc(value)}</label>`),
+  ].join("");
 }
 
 function fillProcess(selector) {
@@ -276,6 +274,10 @@ function bind() {
   $("#saveBulkText").onclick = saveBulkText;
   $("#newProcess").onclick = () => editProcess();
   $("#deleteSelectedProcesses").onclick = deleteSelectedProcesses;
+  $("#applyProcessFilter").onclick = () => {
+    $(".process-filter-menu").open = false;
+    applyFiltersImmediately();
+  };
   $("#addProcessFromEntry").onclick = () => editProcess(null, "entry");
   $("#newUser").onclick = () => editUser();
   $("#importForm").onsubmit = importFile;
@@ -326,13 +328,21 @@ function linkedFilters() {
   const currentProcesses = new Set(checkedValues("process"));
   const typeFiltered = state.options.processes.filter((process) => !types.length || types.includes(process.type));
   renderFilterOptions("line", [...new Set(typeFiltered.map((process) => process.line))].sort());
-  $$(`input[name="lineFilter"]`).forEach((input) => { input.checked = currentLines.has(input.value); });
+  $$(`input[name="lineFilter"]`).forEach((input) => {
+    input.checked = currentLines.size ? currentLines.has(input.value) : input.value === "";
+  });
+  if (!$(`input[name="lineFilter"]:checked`)) {
+    $(`input[name="lineFilter"][value=""]`).checked = true;
+  }
   const refreshedLines = checkedValues("line");
   const processes = typeFiltered.filter((process) => !refreshedLines.length || refreshedLines.includes(process.line));
   renderFilterOptions("process", [...new Set(processes.map((process) => process.processName))].sort());
   $$(`input[name="processFilter"]`).forEach((input) => {
     input.checked = currentProcesses.size ? currentProcesses.has(input.value) : input.value === "";
   });
+  if (!$(`input[name="processFilter"]:checked`)) {
+    $(`input[name="processFilter"][value=""]`).checked = true;
+  }
   refreshProcessCombos();
 }
 
@@ -461,6 +471,9 @@ function renderDailyMain(rows) {
 
 function chart(id, type, data, options = {}) {
   state.charts[id]?.destroy();
+  const basePlugins = {
+    legend: { position: "bottom", labels: { color: getComputedStyle(document.body).getPropertyValue("--text") } },
+  };
   state.charts[id] = new Chart($(id), {
     type,
     data,
@@ -468,12 +481,56 @@ function chart(id, type, data, options = {}) {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { position: "bottom", labels: { color: getComputedStyle(document.body).getPropertyValue("--text") } },
-      },
       ...options,
+      plugins: { ...basePlugins, ...(options.plugins || {}) },
     },
   });
+  return state.charts[id];
+}
+
+const noteDateHighlightPlugin = {
+  id: "noteDateHighlight",
+  beforeDraw(chartInstance) {
+    const notes = chartInstance.options.plugins.noteDateHighlight?.notes || {};
+    const xScale = chartInstance.scales.x;
+    if (!xScale) return;
+    const ctx = chartInstance.ctx;
+    ctx.save();
+    Object.entries(notes).forEach(([date, note]) => {
+      if (!note) return;
+      const index = chartInstance.data.labels.indexOf(date);
+      if (index < 0) return;
+      const x = xScale.getPixelForValue(index);
+      const y = xScale.bottom - 21;
+      const textWidth = ctx.measureText(date).width;
+      const width = Math.max(78, textWidth + 18);
+      roundRect(ctx, x - width / 2, y - 2, width, 22, 6);
+      ctx.fillStyle = "rgba(255,176,32,.16)";
+      ctx.fill();
+      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--warn");
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+    ctx.restore();
+  },
+};
+
+function roundRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+if (window.Chart) {
+  Chart.register(noteDateHighlightPlugin);
 }
 
 function positionFilterMenu(details) {
@@ -490,6 +547,7 @@ function positionFilterMenu(details) {
 
 function chartTrend(rows) {
   const metrics = selectedMetrics();
+  const noteMap = Object.fromEntries(rows.filter((row) => String(row.note || "").trim()).map((row) => [row.date, String(row.note).trim()]));
   const hasNgEtcStack = metrics.includes("ngEtcStack");
   const lineCountMetrics = metrics.filter((metric) => metric !== "ngEtcStack" && !metric.includes("Rate"));
   const stackedMax = hasNgEtcStack ? Math.max(...rows.map((row) => Number(row.ngCount || 0) + Number(row.etcCount || 0)), 0) : 0;
@@ -544,10 +602,13 @@ function chartTrend(rows) {
       order: 1,
     });
   });
-  chart("#trendChart", "line", {
+  const trendChart = chart("#trendChart", "line", {
     labels: rows.map((row) => row.date),
     datasets,
   }, {
+    plugins: {
+      noteDateHighlight: { notes: noteMap },
+    },
     scales: {
       count: { position: "left", stacked: false, ...countScale, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
       stackCount: { position: "left", display: false, stacked: true, ...countScale, grid: { display: false } },
@@ -555,6 +616,35 @@ function chartTrend(rows) {
       x: { stacked: false, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },
   });
+  bindTrendNoteHover(trendChart, noteMap);
+}
+
+function bindTrendNoteHover(chartInstance, noteMap) {
+  const canvas = $("#trendChart");
+  canvas.onmouseleave = hideNoteTooltip;
+  canvas.onmousemove = (event) => {
+    const xScale = chartInstance.scales.x;
+    if (!xScale) return;
+    const rect = canvas.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left;
+    const offsetY = event.clientY - rect.top;
+    if (offsetY < chartInstance.chartArea.bottom - 8) {
+      hideNoteTooltip();
+      return;
+    }
+    let nearest = null;
+    let nearestDistance = Infinity;
+    chartInstance.data.labels.forEach((date, index) => {
+      if (!noteMap[date]) return;
+      const distance = Math.abs(offsetX - xScale.getPixelForValue(index));
+      if (distance < nearestDistance) {
+        nearest = date;
+        nearestDistance = distance;
+      }
+    });
+    if (nearest && nearestDistance <= 42) showNoteTooltipText(event, noteMap[nearest]);
+    else hideNoteTooltip();
+  };
 }
 
 function renderProcessRank() {
