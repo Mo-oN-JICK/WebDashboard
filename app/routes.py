@@ -156,6 +156,7 @@ def etc_consecutive_alerts(args) -> list[dict]:
             {
                 "id": f"etc_streak:{first.processId}:{consecutive_count}:{','.join(item.measurementDate.isoformat() for item in streak)}",
                 "alertType": "etc_streak",
+                "level": "warning",
                 "title": f"Etc% {threshold}% 이상 {consecutive_count}회 연속",
                 "processId": first.processId,
                 "type": first.process.type,
@@ -202,6 +203,7 @@ def etc_daily_increase_alerts(args) -> list[dict]:
                         {
                             "id": f"etc_spike:{row.processId}:{previous.measurementDate.isoformat()}:{row.measurementDate.isoformat()}:{threshold}",
                             "alertType": "etc_spike",
+                            "level": "warning",
                             "title": f"Etc% 하루 증가 +{threshold}% 이상",
                             "processId": row.processId,
                             "type": row.process.type,
@@ -243,6 +245,7 @@ def stale_process_alerts(args) -> list[dict]:
             {
                 "id": f"missing_data:{proc.id}:{last_date}:{threshold_days}",
                 "alertType": "missing_data",
+                "level": "notice",
                 "title": f"데이터 미입력 {threshold_days}일 경과",
                 "processId": proc.id,
                 "type": proc.type,

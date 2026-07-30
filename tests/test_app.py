@@ -88,6 +88,7 @@ def test_dashboard_alerts_for_consecutive_etc_blank_notes(client):
     alerts = res.get_json()["alerts"]
     assert len(alerts) == 1
     assert alerts[0]["processName"] == "RAJ Middle-Screw"
+    assert alerts[0]["level"] == "warning"
     assert alerts[0]["blankNoteDates"] == ["2026-08-01", "2026-08-02", "2026-08-03"]
 
 
@@ -103,6 +104,7 @@ def test_dashboard_alerts_for_daily_etc_spike(client):
     res = client.get("/api/dashboard?start=2026-08-04&end=2026-08-05")
     alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "etc_spike"]
     assert len(alerts) == 1
+    assert alerts[0]["level"] == "warning"
     assert alerts[0]["date"] == "2026-08-05"
     assert alerts[0]["increase"] == 0.9
 
@@ -120,6 +122,7 @@ def test_dashboard_alerts_for_stale_process(client):
     res = client.get("/api/dashboard?type=FAS4.0&line=RC&process=Stale Process")
     alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "missing_data"]
     assert len(alerts) == 1
+    assert alerts[0]["level"] == "notice"
     assert alerts[0]["processName"] == "Stale Process"
 
 

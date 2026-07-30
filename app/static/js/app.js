@@ -275,8 +275,8 @@ function bind() {
     chartTrend(state.trends);
     applyFiltersImmediately(false);
   };
-  $("#noticeButton").onclick = showAlertModal;
-  $("#warningButton").onclick = showAlertModal;
+  $("#noticeButton").onclick = () => showAlertModal("notice");
+  $("#warningButton").onclick = () => showAlertModal("warning");
   $("#globalSearch").oninput = () => { state.page = 1; renderDataTable(); };
   $("#pageSize").onchange = (event) => { state.pageSize = Number(event.target.value); renderDataTable(); };
   $("#processSearch").oninput = loadProcesses;
@@ -483,31 +483,37 @@ function renderKpis(data) {
 }
 
 function renderAlertButtons() {
-  const count = state.alerts.length;
+  const noticeCount = state.alerts.filter((alert) => alert.level === "notice").length;
+  const warningCount = state.alerts.filter((alert) => alert.level !== "notice").length;
   const notice = $("#noticeButton");
   const warning = $("#warningButton");
-  notice.textContent = `알림 ${count}`;
-  warning.textContent = `경고 ${count}`;
-  notice.disabled = count === 0;
-  warning.disabled = count === 0;
-  notice.classList.toggle("active", count > 0);
-  warning.classList.toggle("danger-button", count > 0);
+  notice.textContent = `알림 ${noticeCount}`;
+  warning.textContent = `경고 ${warningCount}`;
+  notice.disabled = noticeCount === 0;
+  warning.disabled = warningCount === 0;
+  notice.classList.toggle("active", noticeCount > 0);
+  warning.classList.toggle("danger-button", warningCount > 0);
 }
 
-function showAlertModal() {
-  if (!state.alerts.length) {
+function showAlertModal(level = null) {
+  const alerts = level ? state.alerts.filter((alert) => (level === "notice" ? alert.level === "notice" : alert.level !== "notice")) : state.alerts;
+  if (!alerts.length) {
     toast("표시할 알림이 없습니다");
     return;
   }
-  const rows = state.alerts.map((alert, index) => `
+  const title = level === "notice" ? "알림" : level === "warning" ? "경고" : "생산품질 알림";
+  const rows = alerts.map((alert) => {
+    const index = state.alerts.findIndex((item) => item.id === alert.id);
+    return `
     <div class="alert-item">
       <strong>${esc(alert.type)} / ${esc(alert.line)} / ${esc(alert.processName)}</strong>
       <span>${esc(alert.title || "생산품질 경고")}</span>
       <small>${alertDetail(alert)}</small>
       <div class="alert-actions"><button type="button" class="ghost" onclick="applyAlertFilter(${index})">필터 적용</button><button type="button" class="primary" onclick="acknowledgeAlert(${index})">확인 완료</button></div>
     </div>
-  `).join("");
-  modal("생산품질 경고", `<div class="alert-list"><div class="alert-actions top"><button type="button" class="ghost" onclick="acknowledgeAllAlerts()">전체 확인 완료</button></div>${rows}</div>`);
+  `;
+  }).join("");
+  modal(title, `<div class="alert-list"><div class="alert-actions top"><button type="button" class="ghost" onclick="acknowledgeVisibleAlerts('${level || ""}')">현재 목록 확인 완료</button></div>${rows}</div>`);
 }
 
 function alertDetail(alert) {
@@ -561,6 +567,21 @@ window.acknowledgeAllAlerts = () => {
   if (state.rows.length) renderDataTable();
   $("#modal").close("acknowledged");
   toast("모든 알림을 확인 완료했습니다");
+};
+
+window.acknowledgeVisibleAlerts = (level) => {
+  const visible = level ? state.alerts.filter((alert) => (level === "notice" ? alert.level === "notice" : alert.level !== "notice")) : state.alerts;
+  const acknowledged = acknowledgedAlerts();
+  visible.forEach((alert) => acknowledged.add(alert.id));
+  saveAcknowledgedAlerts(acknowledged);
+  const visibleIds = new Set(visible.map((alert) => alert.id));
+  state.alerts = state.alerts.filter((alert) => !visibleIds.has(alert.id));
+  renderAlertButtons();
+  chartTrend(state.trends);
+  renderDailyMain(state.trends);
+  if (state.rows.length) renderDataTable();
+  $("#modal").close("acknowledged");
+  toast("현재 목록을 확인 완료했습니다");
 };
 
 function setRadioValue(name, value) {
