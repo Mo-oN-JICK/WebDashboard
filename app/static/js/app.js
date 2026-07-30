@@ -38,6 +38,11 @@ const metricLabels = {
   clusterCount: "Cluster",
 };
 const badUp = new Set(["ngCount", "ngRate", "etcCount", "etcRate"]);
+const defaultStatuses = ["판정 안정", "예외 초과", "설비 점검", "비가동"];
+const statusAliases = {
+  "안정화 상태": "판정 안정",
+  "점검 중": "설비 점검",
+};
 
 function fmt(value) {
   return Number(value ?? 0).toLocaleString("ko-KR");
@@ -355,7 +360,7 @@ function bind() {
   $("#settingsForm").onsubmit = saveSettings;
   $("#toggleDateOrder").onclick = () => { state.pivotDesc = !state.pivotDesc; renderPivot(); };
   $("#savePivot").onclick = savePivot;
-  $("#minTotal").oninput = renderProcessRank;
+  if ($("#minTotal")) $("#minTotal").oninput = renderProcessRank;
 }
 
 function showView(view, title) {
@@ -478,25 +483,22 @@ function applyUrl() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadDashboard(), loadRows(), loadMissing()]);
+  await Promise.all([loadDashboard(), loadRows()]);
 }
 
 async function loadDashboard() {
-  const [dashboard, trends, processCompare] = await Promise.all([
+  const [dashboard, trends] = await Promise.all([
     api("/api/dashboard?" + params()),
     api("/api/trends?" + params()),
-    api("/api/compare/process?" + params()),
   ]);
   state.trends = trends;
-  state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
   renderDailyMain(trends);
+  renderStatusSummary();
   updateTrendTitle();
   chartTrend(trends);
-  renderKpis(dashboard);
   renderAlertButtons();
   if (state.rows.length) renderDataTable();
-  renderProcessRank();
 }
 
 async function loadRows() {
@@ -530,6 +532,31 @@ function renderKpis(data) {
     const diffText = key.includes("Rate") ? pct(diff) : fmt(diff);
     return `<div class="kpi"><p>${labels[key]}</p><strong>${formatted}</strong><div class="delta ${cls}">이전 대비 ${diff > 0 ? "+" : ""}${diffText} · ${comparison.changeRate ?? 0}%</div></div>`;
   }).join("");
+}
+
+function statusBase(value) {
+  const raw = String(value || "").trim();
+  const direct = defaultStatuses.find((status) => raw === status || raw.startsWith(`${status} - `));
+  if (direct) return direct;
+  return statusAliases[raw] || statusAliases[raw.split(" - ")[0]] || "";
+}
+
+function renderStatusSummary() {
+  const target = $("#statusSummary");
+  if (!target || !state.options?.processes) return;
+  const counts = Object.fromEntries(defaultStatuses.map((status) => [status, 0]));
+  state.options.processes.filter((process) => process.isActive).forEach((process) => {
+    const base = statusBase(process.status);
+    if (base && counts[base] !== undefined) counts[base] += 1;
+  });
+  const classes = ["stable", "exception", "inspection", "idle"];
+  target.innerHTML = defaultStatuses.map((status, index) => `
+    <article class="status-card ${classes[index]}">
+      <p>${esc(status)}</p>
+      <strong>${fmt(counts[status])}</strong>
+      <span>전체 활성 공정</span>
+    </article>
+  `).join("");
 }
 
 function renderAlertButtons() {
@@ -1268,7 +1295,11 @@ async function loadProcesses() {
 window.editProcess = async (id, originView = null) => {
   const row = id ? (await api("/api/processes")).find((item) => item.id === id) : { line: "", type: "", processName: "", status: "" };
   modal(id ? "공정 수정" : "공정 등록", processFormHtml(row), async () => {
-    await api(id ? `/api/processes/${id}` : "/api/processes", { method: id ? "PUT" : "POST", body: JSON.stringify(modalData()) });
+    const data = modalData();
+    data.status = composeProcessStatus(data.statusBase, data.statusComment);
+    delete data.statusBase;
+    delete data.statusComment;
+    await api(id ? `/api/processes/${id}` : "/api/processes", { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
     toast("저장했습니다");
     state.options = await api("/api/options");
     hydrateOptions();
@@ -1278,15 +1309,32 @@ window.editProcess = async (id, originView = null) => {
   });
 };
 
+function splitProcessStatus(value) {
+  const raw = String(value || "").trim();
+  const base = defaultStatuses.find((status) => raw === status || raw.startsWith(`${status} - `));
+  if (!base) return { base: raw, comment: "" };
+  return { base, comment: raw === base ? "" : raw.slice(base.length + 3).trim() };
+}
+
+function composeProcessStatus(base, comment) {
+  const normalizedBase = String(base || "").trim();
+  const normalizedComment = String(comment || "").trim();
+  if (!normalizedBase) return normalizedComment;
+  return normalizedComment ? `${normalizedBase} - ${normalizedComment}` : normalizedBase;
+}
+
 function processFormHtml(row) {
+  const status = splitProcessStatus(row.status);
   return `<div class="form-grid">
     <label>Type<input name="type" list="processTypeList" value="${esc(row.type)}" required></label>
     <label>Line<input name="line" list="processLineList" value="${esc(row.line)}" required></label>
     <label>Process<input name="processName" value="${esc(row.processName)}" required></label>
-    <label>현황<input name="status" list="processStatusList" value="${esc(row.status || "")}"></label>
+    <label>현황 기본항목<input name="statusBase" list="processStatusList" value="${esc(status.base)}" placeholder="직접 입력 가능"></label>
+    <label class="wide">현황 코멘트<input name="statusComment" value="${esc(status.comment)}" placeholder="기본항목 뒤에 붙일 코멘트"></label>
     ${datalistHtml("processTypeList", uniqueValues(state.options.processes.map((item) => item.type)))}
     ${datalistHtml("processLineList", uniqueValues(state.options.processes.map((item) => item.line)))}
-    ${datalistHtml("processStatusList", uniqueValues([...(state.options.statuses || []), ...state.options.processes.map((item) => item.status)]))}
+    ${statusDatalistHtml("processStatusList", uniqueValues([...defaultStatuses, ...(state.options.statuses || []), ...state.options.processes.map((item) => splitProcessStatus(item.status).base)]))}
+    <div class="wide helper">기본 항목: ${defaultStatuses.map(esc).join(" / ")}</div>
   </div>`;
 }
 
@@ -1296,6 +1344,10 @@ function uniqueValues(values) {
 
 function datalistHtml(id, values) {
   return `<datalist id="${id}">${values.map((value) => `<option value="${esc(value)}"></option>`).join("")}</datalist>`;
+}
+
+function statusDatalistHtml(id, values) {
+  return `<datalist id="${id}">${values.map((value) => `<option value="${esc(value)}" label="${defaultStatuses.includes(value) ? "기본 항목" : "사용자 항목"}"></option>`).join("")}</datalist>`;
 }
 
 window.toggleProcess = async (id, isActive) => {
@@ -1418,5 +1470,5 @@ function modal(title, body, onOk) {
   dialog.showModal();
 }
 
-$("#exportMissing").onclick = () => toast("누락 목록은 화면 표에서 확인할 수 있습니다");
+if ($("#exportMissing")) $("#exportMissing").onclick = () => toast("누락 목록은 화면 표에서 확인할 수 있습니다");
 init().catch((error) => toast(error.message));

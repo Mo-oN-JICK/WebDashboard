@@ -84,19 +84,7 @@
           <div class="chart-box trend-box"><canvas id="trendChart"></canvas></div>
         </article>
         <div class="table-wrap main-table-wrap main-data"><table id="dailyMainTable"></table></div>
-        <div id="kpis" class="kpi-grid skeleton"></div>
-        <article class="panel">
-          <div class="panel-head"><h3>공정 NG율 순위</h3><label>최소 총체결 <input id="minTotal" type="number" min="0" value="0"></label></div>
-          <div class="chart-box small-chart"><canvas id="processChart"></canvas></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>공정 비교 순위표</h3></div>
-          <div class="table-wrap"><table id="rankTable"></table></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>데이터 누락 확인</h3><button id="exportMissing" class="ghost">Excel 내보내기</button></div>
-          <div class="table-wrap"><table id="missingTable"></table></div>
-        </article>
+        <section id="statusSummary" class="status-summary" aria-label="공정 현황 요약"></section>
       </section>
 
       <section id="view-browse" class="view">

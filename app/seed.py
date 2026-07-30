@@ -10,7 +10,7 @@ from .models import AppSetting, DailyMeasurement, NoteTemplate, ProcessMaster, S
 
 
 def seed_defaults() -> None:
-    for name in ["안정화 상태", "점검 중", "개선 중", "비가동", "완료"]:
+    for name in ["판정 안정", "예외 초과", "설비 점검", "비가동", "안정화 상태", "점검 중", "개선 중", "완료"]:
         if not StatusOption.query.filter_by(name=name).first():
             db.session.add(StatusOption(name=name))
     for text in ["재학습", "설비점검", "부품교체"]:
@@ -46,8 +46,8 @@ def seed_defaults() -> None:
         return
 
     samples = [
-        ("RA", "FAS2.0", "RAJ Middle-Screw", "안정화 상태"),
-        ("RA", "FAS2.0", "RAJ Middle-Front", "안정화 상태"),
+        ("RA", "FAS2.0", "RAJ Middle-Screw", "판정 안정"),
+        ("RA", "FAS2.0", "RAJ Middle-Front", "판정 안정"),
     ]
     processes = []
     for line, typ, name, status in samples:
