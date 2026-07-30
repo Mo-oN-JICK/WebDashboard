@@ -7,6 +7,7 @@ const state = {
   selectedMeasurements: new Set(),
   selectedProcesses: new Set(),
   alerts: [],
+  alertModalGroups: [],
   trends: [],
   processCompare: [],
   page: 1,
@@ -502,18 +503,34 @@ function showAlertModal(level = null) {
     return;
   }
   const title = level === "notice" ? "알림" : level === "warning" ? "경고" : "생산품질 알림";
-  const rows = alerts.map((alert) => {
-    const index = state.alerts.findIndex((item) => item.id === alert.id);
+  state.alertModalGroups = groupAlertsByProcess(alerts);
+  const rows = state.alertModalGroups.map((group, groupIndex) => {
+    const alert = group.alerts[0];
+    const details = group.alerts.map((item) => `
+      <div class="alert-detail">
+        <span>${esc(item.title || "생산품질 경고")}</span>
+        <small>${alertDetail(item)}</small>
+      </div>
+    `).join("");
     return `
     <div class="alert-item">
-      <strong>${esc(alert.type)} / ${esc(alert.line)} / ${esc(alert.processName)}</strong>
-      <span>${esc(alert.title || "생산품질 경고")}</span>
-      <small>${alertDetail(alert)}</small>
-      <div class="alert-actions"><button type="button" class="ghost" onclick="applyAlertFilter(${index})">필터 적용</button><button type="button" class="primary" onclick="acknowledgeAlert(${index})">확인 완료</button></div>
+      <strong>${esc(alert.type)} / ${esc(alert.line)} / ${esc(alert.processName)} <em>${group.alerts.length}</em></strong>
+      <div class="alert-detail-list">${details}</div>
+      <div class="alert-actions"><button type="button" class="ghost" onclick="applyAlertGroupFilter(${groupIndex})">필터 적용</button><button type="button" class="primary" onclick="acknowledgeAlertGroup(${groupIndex})">확인 완료</button></div>
     </div>
   `;
   }).join("");
   modal(title, `<div class="alert-list"><div class="alert-actions top"><button type="button" class="ghost" onclick="acknowledgeVisibleAlerts('${level || ""}')">현재 목록 확인 완료</button></div>${rows}</div>`);
+}
+
+function groupAlertsByProcess(alerts) {
+  const groups = new Map();
+  alerts.forEach((alert) => {
+    const key = [alert.processId ?? "", alert.type ?? "", alert.line ?? "", alert.processName ?? ""].join("|");
+    if (!groups.has(key)) groups.set(key, { key, alerts: [] });
+    groups.get(key).alerts.push(alert);
+  });
+  return [...groups.values()];
 }
 
 function alertDetail(alert) {
@@ -526,8 +543,7 @@ function alertDetail(alert) {
   return `비고 공란 날짜: ${(alert.blankNoteDates || []).map(esc).join(", ")}`;
 }
 
-window.applyAlertFilter = (index) => {
-  const alert = state.alerts[index];
+function applyAlertObject(alert) {
   if (!alert) return;
   const dialog = $("#modal");
   dialog.close("filter");
@@ -539,21 +555,45 @@ window.applyAlertFilter = (index) => {
   updateFilterCounts();
   updateTrendTitle();
   applyFiltersImmediately();
-};
+}
 
-window.acknowledgeAlert = (index) => {
-  const alert = state.alerts[index];
-  if (!alert) return;
-  const acknowledged = acknowledgedAlerts();
-  acknowledged.add(alert.id);
-  saveAcknowledgedAlerts(acknowledged);
-  state.alerts = state.alerts.filter((item) => item.id !== alert.id);
+function refreshAlertsAfterAcknowledge(message) {
   renderAlertButtons();
   chartTrend(state.trends);
   renderDailyMain(state.trends);
   if (state.rows.length) renderDataTable();
   $("#modal").close("acknowledged");
-  toast("알림을 확인 완료했습니다");
+  toast(message);
+}
+
+function acknowledgeAlertIds(ids, message) {
+  const acknowledged = acknowledgedAlerts();
+  ids.forEach((id) => acknowledged.add(id));
+  saveAcknowledgedAlerts(acknowledged);
+  const idSet = new Set(ids);
+  state.alerts = state.alerts.filter((item) => !idSet.has(item.id));
+  state.alertModalGroups = [];
+  refreshAlertsAfterAcknowledge(message);
+}
+
+window.applyAlertFilter = (index) => {
+  applyAlertObject(state.alerts[index]);
+};
+
+window.applyAlertGroupFilter = (groupIndex) => {
+  applyAlertObject(state.alertModalGroups[groupIndex]?.alerts[0]);
+};
+
+window.acknowledgeAlert = (index) => {
+  const alert = state.alerts[index];
+  if (!alert) return;
+  acknowledgeAlertIds([alert.id], "알림을 확인 완료했습니다");
+};
+
+window.acknowledgeAlertGroup = (groupIndex) => {
+  const group = state.alertModalGroups[groupIndex];
+  if (!group) return;
+  acknowledgeAlertIds(group.alerts.map((alert) => alert.id), "해당 공정의 알림/경고를 확인 완료했습니다");
 };
 
 window.acknowledgeAllAlerts = () => {
