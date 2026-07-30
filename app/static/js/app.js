@@ -10,7 +10,6 @@ const state = {
   pageSize: 20,
   pivotDesc: false,
   activeView: "dashboard",
-  trendMode: "trend",
   charts: {},
 };
 
@@ -31,6 +30,7 @@ const metricLabels = {
   ngRate: "NG%",
   etcCount: "Etc",
   etcRate: "Etc%",
+  ngEtcStack: "NG+Etc",
   clusterCount: "Cluster",
 };
 const badUp = new Set(["ngCount", "ngRate", "etcCount", "etcRate"]);
@@ -137,11 +137,6 @@ function bind() {
   $$(".sidebar nav button").forEach((button) => {
     button.onclick = () => showView(button.dataset.view, button.textContent);
   });
-  $("#toggleNgEtc").onclick = () => {
-    state.trendMode = state.trendMode === "ngEtc" ? "trend" : "ngEtc";
-    $("#toggleNgEtc").classList.toggle("active", state.trendMode === "ngEtc");
-    chartTrend(state.trends);
-  };
   $("#themeToggle").onclick = () => {
     document.body.classList.toggle("dark");
     $("#themeToggle").textContent = document.body.classList.contains("dark") ? "밝은 모드" : "다크 모드";
@@ -375,39 +370,63 @@ function positionFilterMenu(details) {
 }
 
 function chartTrend(rows) {
-  if (state.trendMode === "ngEtc") {
-    chart("#trendChart", "bar", {
-      labels: rows.map((row) => row.date),
-      datasets: [
-        { label: "NG", data: rows.map((row) => row.ngCount ?? 0), backgroundColor: "#ff5d5d", stack: "ngEtc" },
-        { label: "Etc", data: rows.map((row) => row.etcCount ?? 0), backgroundColor: "#ffb020", stack: "ngEtc" },
-      ],
-    }, {
-      scales: {
-        x: { stacked: true, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
-        y: { stacked: true, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
-      },
-    });
-    return;
-  }
   const metrics = selectedMetrics();
-  const colors = ["#5b8cff", "#ff5d5d", "#f97316", "#ffb020", "#a78bfa", "#38bdf8"];
-  chart("#trendChart", "line", {
-    labels: rows.map((row) => row.date),
-    datasets: metrics.map((metric, index) => ({
+  const colors = {
+    totalCount: "#5b8cff",
+    ngCount: "#ff5d5d",
+    ngRate: "#f97316",
+    etcCount: "#ffb020",
+    etcRate: "#a78bfa",
+    clusterCount: "#38bdf8",
+  };
+  const datasets = [];
+  if (metrics.includes("ngEtcStack")) {
+    datasets.push(
+      {
+        type: "bar",
+        label: "NG+Etc / NG",
+        data: rows.map((row) => row.ngCount ?? 0),
+        backgroundColor: "rgba(255, 93, 93, .72)",
+        borderColor: "#ff5d5d",
+        borderWidth: 1,
+        stack: "ngEtc",
+        yAxisID: "count",
+        order: 2,
+      },
+      {
+        type: "bar",
+        label: "NG+Etc / Etc",
+        data: rows.map((row) => row.etcCount ?? 0),
+        backgroundColor: "rgba(255, 176, 32, .72)",
+        borderColor: "#ffb020",
+        borderWidth: 1,
+        stack: "ngEtc",
+        yAxisID: "count",
+        order: 2,
+      },
+    );
+  }
+  metrics.filter((metric) => metric !== "ngEtcStack").forEach((metric) => {
+    datasets.push({
+      type: "line",
       label: metricLabels[metric],
       data: rows.map((row) => row[metric] ?? null),
-      borderColor: colors[index],
-      backgroundColor: colors[index],
+      borderColor: colors[metric],
+      backgroundColor: colors[metric],
       tension: 0.25,
       spanGaps: false,
       yAxisID: metric.includes("Rate") ? "pct" : "count",
-    })),
+      order: 1,
+    });
+  });
+  chart("#trendChart", "line", {
+    labels: rows.map((row) => row.date),
+    datasets,
   }, {
     scales: {
-      count: { position: "left", ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
+      count: { position: "left", stacked: metrics.includes("ngEtcStack"), ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
       pct: { position: "right", ticks: { color: "#a8b3c7", callback: (value) => value + "%" }, grid: { drawOnChartArea: false } },
-      x: { ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
+      x: { stacked: metrics.includes("ngEtcStack"), ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },
   });
 }
