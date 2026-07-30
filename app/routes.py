@@ -353,10 +353,12 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
     rows = [{"processId": process_id, "measurementDate": d} for d in dates]
     mapping = {
         "총체결": "totalCount",
+        "총 체결": "totalCount",
         "NG": "ngCount",
         "진성": "trueDefectCount",
         "미검": "missedInspectionCount",
         "과검": "overInspectionCount",
+        "Cluster": "clusterCount",
         "Cluster(Upper)": "clusterUpperCount",
         "Cluster(Lower(Near))": "clusterLowerNearCount",
         "Cluster(Lower(Far))": "clusterLowerFarCount",
@@ -366,12 +368,12 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
         "비고": "note",
     }
     for parts in matrix[1:]:
-        label = parts[0]
+        label, values = split_bulk_label(parts, mapping)
         field = mapping.get(label)
         if not field:
             continue
         for idx, row in enumerate(rows):
-            row[field] = parts[idx + 1] if idx + 1 < len(parts) else ""
+            row[field] = values[idx] if idx < len(values) else ""
     for row in rows:
         upper = to_int(row.get("clusterUpperCount", 0), "Cluster(Upper)")
         near = to_int(row.get("clusterLowerNearCount", 0), "Cluster(Lower(Near))")
@@ -382,6 +384,14 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
         row.setdefault("etcCount", 0)
         row.setdefault("note", "")
     return rows
+
+
+def split_bulk_label(parts: list[str], mapping: dict[str, str]) -> tuple[str, list[str]]:
+    if len(parts) >= 2:
+        two_word_label = f"{parts[0]} {parts[1]}"
+        if two_word_label in mapping:
+            return two_word_label, parts[2:]
+    return parts[0], parts[1:]
 
 
 def looks_like_date(value: str) -> bool:

@@ -124,3 +124,20 @@ ETC\t17\t18"""
     assert row.trueDefectCount == 3
     assert row.clusterCount == 33
     assert row.clusterLowerFarCount == 13
+
+
+def test_bulk_text_accepts_spaced_total_and_single_cluster(client):
+    login(client)
+    proc_id = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first().id
+    text = """\t2026-07-26\t2026-07-27
+총 체결\t300\t400
+NG\t3\t4
+Cluster\t31\t41
+ETC\t5\t6"""
+    res = client.post("/api/bulk-text", json={"processId": proc_id, "text": text})
+    assert res.status_code == 200
+    assert res.get_json()["failed"] == 0
+    row = DailyMeasurement.query.filter_by(processId=proc_id, measurementDate=date(2026, 7, 26)).first()
+    assert row.totalCount == 300
+    assert row.etcCount == 5
+    assert row.clusterCount == 31

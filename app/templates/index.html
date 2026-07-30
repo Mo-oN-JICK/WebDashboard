@@ -44,11 +44,8 @@
           <input type="date" id="end" aria-label="조회 종료일">
         </div>
         <div class="quick-buttons" aria-label="빠른 기간">
-          <button data-range="7" class="ghost">7일</button>
+          <button data-range="7" class="ghost active">7일</button>
           <button data-range="30" class="ghost">30일</button>
-          <button data-range="month" class="ghost">이번 달</button>
-          <button data-range="prevMonth" class="ghost">지난달</button>
-          <button data-range="all" class="ghost">전체</button>
         </div>
         <details class="filter-menu" data-filter="line"><summary>Line <b id="lineCount">전체</b></summary><div id="lineOptions" class="menu-options"></div></details>
         <details class="filter-menu" data-filter="type"><summary>Type <b id="typeCount">전체</b></summary><div id="typeOptions" class="menu-options"></div></details>
@@ -71,6 +68,7 @@
           <div class="panel-head">
             <h3>날짜별 추이 그래프</h3>
             <div class="panel-actions">
+              <button id="toggleNgEtc" class="ghost" type="button">NG+ETC</button>
               <button id="exportXlsxMain" class="ghost">Excel 내보내기</button>
               <button id="saveTrendPng" class="ghost">PNG 저장</button>
             </div>

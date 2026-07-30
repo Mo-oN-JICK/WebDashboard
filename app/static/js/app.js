@@ -9,6 +9,8 @@ const state = {
   page: 1,
   pageSize: 20,
   pivotDesc: false,
+  activeView: "dashboard",
+  trendMode: "trend",
   charts: {},
 };
 
@@ -100,6 +102,7 @@ async function init() {
   hydrateOptions();
   bind();
   applyUrl();
+  restoreView();
   await refreshAll();
 }
 
@@ -134,6 +137,11 @@ function bind() {
   $$(".sidebar nav button").forEach((button) => {
     button.onclick = () => showView(button.dataset.view, button.textContent);
   });
+  $("#toggleNgEtc").onclick = () => {
+    state.trendMode = state.trendMode === "ngEtc" ? "trend" : "ngEtc";
+    $("#toggleNgEtc").classList.toggle("active", state.trendMode === "ngEtc");
+    chartTrend(state.trends);
+  };
   $("#themeToggle").onclick = () => {
     document.body.classList.toggle("dark");
     $("#themeToggle").textContent = document.body.classList.contains("dark") ? "밝은 모드" : "다크 모드";
@@ -205,6 +213,8 @@ function bind() {
 }
 
 function showView(view, title) {
+  state.activeView = view;
+  sessionStorage.setItem("activeView", view);
   $$(".view").forEach((el) => el.classList.remove("active"));
   $("#view-" + view).classList.add("active");
   $$(".sidebar nav button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -215,6 +225,12 @@ function showView(view, title) {
   if (view === "processes") loadProcesses();
 }
 
+function restoreView() {
+  const view = sessionStorage.getItem("activeView");
+  const button = view ? $(`.sidebar nav button[data-view="${view}"]`) : null;
+  if (button) showView(view, button.textContent);
+}
+
 function quickRange(value) {
   const now = new Date();
   let start = "";
@@ -223,13 +239,6 @@ function quickRange(value) {
     const date = new Date(now);
     date.setDate(now.getDate() - Number(value) + 1);
     start = date.toISOString().slice(0, 10);
-  } else if (value === "month") {
-    start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  } else if (value === "prevMonth") {
-    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const last = new Date(now.getFullYear(), now.getMonth(), 0);
-    start = first.toISOString().slice(0, 10);
-    end = last.toISOString().slice(0, 10);
   } else {
     end = "";
   }
@@ -258,6 +267,11 @@ function updateFilterCounts() {
 function applyUrl() {
   const search = new URLSearchParams(location.search);
   ["start", "end"].forEach((id) => { $("#" + id).value = search.get(id) || ""; });
+  if (!search.has("start") && !search.has("end")) {
+    quickRange("7");
+    const sevenDayButton = $('.quick-buttons button[data-range="7"]');
+    if (sevenDayButton) sevenDayButton.classList.add("active");
+  }
   ["line", "type", "process", "status"].forEach((name) => {
     const values = search.getAll(name);
     $$(`input[name="${name}Filter"]`).forEach((input) => {
@@ -361,6 +375,21 @@ function positionFilterMenu(details) {
 }
 
 function chartTrend(rows) {
+  if (state.trendMode === "ngEtc") {
+    chart("#trendChart", "bar", {
+      labels: rows.map((row) => row.date),
+      datasets: [
+        { label: "NG", data: rows.map((row) => row.ngCount ?? 0), backgroundColor: "#ff5d5d", stack: "ngEtc" },
+        { label: "Etc", data: rows.map((row) => row.etcCount ?? 0), backgroundColor: "#ffb020", stack: "ngEtc" },
+      ],
+    }, {
+      scales: {
+        x: { stacked: true, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
+        y: { stacked: true, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
+      },
+    });
+    return;
+  }
   const metrics = selectedMetrics();
   const colors = ["#5b8cff", "#ff5d5d", "#f97316", "#ffb020", "#a78bfa", "#38bdf8"];
   chart("#trendChart", "line", {
@@ -525,13 +554,22 @@ function parseBulkTextLocal() {
   const matrix = lines.map((line) => line.replace(/\t/g, " ").split(/\s+/));
   const dates = (matrix[0] || []).filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item));
   const rows = dates.map((day) => ({ date: day, totalCount: 0, ngCount: 0, etcCount: 0, clusterCount: 0 }));
-  const keyMap = { "총체결": "totalCount", "NG": "ngCount", "ETC": "etcCount", "Etc": "etcCount", "Cluster(Upper)": "clusterCount" };
+  const keyMap = { "총체결": "totalCount", "총 체결": "totalCount", "NG": "ngCount", "ETC": "etcCount", "Etc": "etcCount", "Cluster": "clusterCount", "Cluster(Upper)": "clusterCount" };
   matrix.slice(1).forEach((parts) => {
-    const key = keyMap[parts[0]];
+    const parsed = splitBulkLabelLocal(parts, keyMap);
+    const key = keyMap[parsed.label];
     if (!key) return;
-    rows.forEach((row, index) => { row[key] = Number(parts[index + 1] || 0); });
+    rows.forEach((row, index) => { row[key] = Number(parsed.values[index] || 0); });
   });
   return rows;
+}
+
+function splitBulkLabelLocal(parts, keyMap) {
+  if (parts.length >= 2) {
+    const twoWordLabel = `${parts[0]} ${parts[1]}`;
+    if (keyMap[twoWordLabel]) return { label: twoWordLabel, values: parts.slice(2) };
+  }
+  return { label: parts[0], values: parts.slice(1) };
 }
 
 function renderBulkTextPreview() {
@@ -574,7 +612,10 @@ window.editProcess = async (id) => {
   modal(id ? "공정 수정" : "공정 등록", `<div class="form-grid"><label>Line<input name="line" value="${esc(row.line)}"></label><label>Type<input name="type" value="${esc(row.type)}"></label><label>Process<input name="processName" value="${esc(row.processName)}"></label><label>현황<input name="status" value="${esc(row.status)}"></label></div>`, async () => {
     await api(id ? `/api/processes/${id}` : "/api/processes", { method: id ? "PUT" : "POST", body: JSON.stringify(modalData()) });
     toast("저장했습니다");
-    location.reload();
+    state.options = await api("/api/options");
+    hydrateOptions();
+    loadProcesses();
+    refreshAll();
   });
 };
 
