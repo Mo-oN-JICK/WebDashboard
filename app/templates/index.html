@@ -47,9 +47,14 @@
           <button data-range="7" class="ghost active">7일</button>
           <button data-range="30" class="ghost">30일</button>
         </div>
-        <details class="filter-menu" data-filter="type"><summary>Type <b id="typeCount">전체</b></summary><div id="typeOptions" class="menu-options"></div></details>
-        <details class="filter-menu" data-filter="line"><summary>Line <b id="lineCount">전체</b></summary><div id="lineOptions" class="menu-options"></div></details>
-        <details class="filter-menu" data-filter="process"><summary>Process <b id="processCount">전체</b></summary><div id="processOptions" class="menu-options"></div></details>
+        <details class="filter-menu process-filter-menu" data-filter="processGroup">
+          <summary>공정 필터 <b id="typeCount">전체</b><b id="lineCount">전체</b><b id="processCount">전체</b></summary>
+          <div class="menu-options combined-options">
+            <section><h4>Type</h4><div id="typeOptions"></div></section>
+            <section><h4>Line</h4><div id="lineOptions"></div></section>
+            <section><h4>Process</h4><div id="processOptions"></div></section>
+          </div>
+        </details>
         <div id="metricFilter" class="metric-toggles" aria-label="그래프 구분">
           <label><input type="checkbox" value="totalCount" checked>총체결</label>
           <label><input type="checkbox" value="ngCount" checked>NG</label>

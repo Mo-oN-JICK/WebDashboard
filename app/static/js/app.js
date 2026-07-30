@@ -76,7 +76,7 @@ async function api(url, options = {}) {
 }
 
 function checkedValues(filterName) {
-  return $$(`input[name="${filterName}Filter"]:checked`).map((input) => input.value);
+  return $$(`input[name="${filterName}Filter"]:checked`).map((input) => input.value).filter(Boolean);
 }
 
 function selectedMetrics() {
@@ -109,8 +109,8 @@ async function init() {
 }
 
 function hydrateOptions() {
-  renderFilterOptions("line", state.options.lines);
   renderFilterOptions("type", state.options.types);
+  renderFilterOptions("line", state.options.lines);
   renderFilterOptions("process", state.options.processes.map((p) => p.processName));
   fillProcess("[name=processId]");
   fillProcess("#bulkTextProcess");
@@ -122,7 +122,15 @@ function hydrateOptions() {
 
 function renderFilterOptions(name, values) {
   const target = $(`#${name}Options`);
-  target.innerHTML = values.map((value) => (
+  const unique = [...new Set(values)].filter((value) => value !== null && value !== undefined && String(value).trim() !== "").sort();
+  if (name === "process") {
+    target.innerHTML = [
+      `<label class="check-option"><input type="radio" name="${name}Filter" value="" checked>전체</label>`,
+      ...unique.map((value) => `<label class="check-option"><input type="radio" name="${name}Filter" value="${esc(value)}">${esc(value)}</label>`),
+    ].join("");
+    return;
+  }
+  target.innerHTML = unique.map((value) => (
     `<label class="check-option"><input type="checkbox" name="${name}Filter" value="${esc(value)}">${esc(value)}</label>`
   )).join("");
 }
@@ -170,7 +178,7 @@ function bind() {
   });
   $("#resetFilters").onclick = () => {
     ["start", "end"].forEach((id) => { $("#" + id).value = ""; });
-    $$(`.filter-menu input[type="checkbox"]`).forEach((input) => { input.checked = false; });
+    $$(`.filter-menu input`).forEach((input) => { input.checked = false; });
     hydrateOptions();
     updateFilterCounts();
     updateTrendTitle();
@@ -288,14 +296,17 @@ function linkedFilters() {
   const refreshedLines = checkedValues("line");
   const processes = typeFiltered.filter((process) => !refreshedLines.length || refreshedLines.includes(process.line));
   renderFilterOptions("process", [...new Set(processes.map((process) => process.processName))].sort());
-  $$(`input[name="processFilter"]`).forEach((input) => { input.checked = currentProcesses.has(input.value); });
+  $$(`input[name="processFilter"]`).forEach((input) => {
+    input.checked = currentProcesses.size ? currentProcesses.has(input.value) : input.value === "";
+  });
   refreshProcessCombos();
 }
 
 function updateFilterCounts() {
+  const shortLabels = { type: "Type", line: "Line", process: "Process" };
   ["type", "line", "process"].forEach((name) => {
     const count = checkedValues(name).length;
-    $(`#${name}Count`).textContent = count ? `${count}개` : "전체";
+    $(`#${name}Count`).textContent = count ? `${shortLabels[name]} ${count}` : `${shortLabels[name]} 전체`;
   });
 }
 
@@ -322,7 +333,7 @@ function updateTrendTitle() {
     title.textContent = `${selectedProcesses[0]} 날짜별 추이 그래프`;
     return;
   }
-  title.textContent = `[${process.line}] ${process.processName} 날짜별 추이 그래프 ${process.status || ""}`.trim();
+  title.innerHTML = `<span class="trend-title-row"><span class="trend-chip"><small>Line</small>${esc(process.line)}</span><span class="trend-chip"><small>Process</small>${esc(process.processName)}</span><span>날짜별 추이 그래프</span>${process.status ? `<span class="trend-chip"><small>현황</small>${esc(process.status)}</span>` : ""}</span>`;
 }
 
 function applyUrl() {
@@ -342,7 +353,9 @@ function applyUrl() {
   linkedFilters();
   ["line", "process"].forEach((name) => {
     const values = search.getAll(name);
-    $$(`input[name="${name}Filter"]`).forEach((input) => { input.checked = values.includes(input.value); });
+    $$(`input[name="${name}Filter"]`).forEach((input) => {
+      input.checked = name === "process" && values.length === 0 ? input.value === "" : values.includes(input.value);
+    });
   });
   updateFilterCounts();
   updateTrendTitle();
@@ -433,7 +446,9 @@ function positionFilterMenu(details) {
   const summary = $("summary", details);
   const menu = $(".menu-options", details);
   const rect = summary.getBoundingClientRect();
-  const width = Math.max(230, rect.width);
+  const width = details.classList.contains("process-filter-menu")
+    ? Math.min(760, window.innerWidth - 24)
+    : Math.max(230, rect.width);
   menu.style.width = `${width}px`;
   menu.style.left = `${Math.min(rect.left, window.innerWidth - width - 12)}px`;
   menu.style.top = `${rect.bottom + 6}px`;
