@@ -4,6 +4,8 @@ const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector
 const state = {
   options: null,
   rows: [],
+  selectedMeasurements: new Set(),
+  selectedProcesses: new Set(),
   trends: [],
   processCompare: [],
   page: 1,
@@ -215,8 +217,10 @@ function bind() {
   };
   $("#globalSearch").oninput = () => { state.page = 1; renderDataTable(); };
   $("#pageSize").onchange = (event) => { state.pageSize = Number(event.target.value); renderDataTable(); };
+  $("#processSearch").oninput = loadProcesses;
   $("#exportXlsx").onclick = () => { location.href = "/api/export?format=xlsx&" + params(); };
   $("#exportCsv").onclick = () => { location.href = "/api/export?format=csv&" + params(); };
+  $("#deleteSelectedMeasurements").onclick = deleteSelectedMeasurements;
   $("#exportXlsxMain").onclick = () => { location.href = "/api/export?format=xlsx&" + params(); };
   $("#saveTrendPng").onclick = () => {
     const link = document.createElement("a");
@@ -229,6 +233,7 @@ function bind() {
   $("#previewBulkText").onclick = renderBulkTextPreview;
   $("#saveBulkText").onclick = saveBulkText;
   $("#newProcess").onclick = () => editProcess();
+  $("#deleteSelectedProcesses").onclick = deleteSelectedProcesses;
   $("#addProcessFromEntry").onclick = () => editProcess(null, "entry");
   $("#newUser").onclick = () => editUser();
   $("#importForm").onsubmit = importFile;
@@ -364,6 +369,8 @@ async function loadDashboard() {
 
 async function loadRows() {
   state.rows = await api("/api/measurements?" + params());
+  const rowIds = new Set(state.rows.map((row) => Number(row.id)));
+  state.selectedMeasurements = new Set([...state.selectedMeasurements].filter((id) => rowIds.has(Number(id))));
   renderDataTable();
   renderPivot();
 }
@@ -520,6 +527,53 @@ function renderTable(selector, heads, rows) {
   $(selector).innerHTML = `<thead><tr>${heads.map((head) => `<th>${head}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${heads.length}" class="empty">데이터가 없습니다</td></tr>`}</tbody>`;
 }
 
+function selectionSet(kind) {
+  return kind === "process" ? state.selectedProcesses : state.selectedMeasurements;
+}
+
+function selectionHead(kind, ids) {
+  const selected = selectionSet(kind);
+  const visibleIds = ids.map(Number);
+  const checked = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  return `<label class="select-cell"><input type="checkbox" aria-label="모두 선택" ${checked ? "checked" : ""} onchange="toggleVisibleSelection('${kind}', this.checked, '${visibleIds.join(",")}')"></label>`;
+}
+
+function selectionCell(kind, id) {
+  const checked = selectionSet(kind).has(Number(id));
+  return `<label class="select-cell"><input type="checkbox" aria-label="선택" ${checked ? "checked" : ""} onchange="toggleSelection('${kind}', ${Number(id)}, this.checked)"></label>`;
+}
+
+function updateSelectionButtons() {
+  const measurementButton = $("#deleteSelectedMeasurements");
+  const processButton = $("#deleteSelectedProcesses");
+  if (measurementButton) {
+    measurementButton.textContent = `선택 삭제${state.selectedMeasurements.size ? ` (${state.selectedMeasurements.size})` : ""}`;
+    measurementButton.disabled = !state.selectedMeasurements.size;
+  }
+  if (processButton) {
+    processButton.textContent = `선택 삭제${state.selectedProcesses.size ? ` (${state.selectedProcesses.size})` : ""}`;
+    processButton.disabled = !state.selectedProcesses.size;
+  }
+}
+
+window.toggleSelection = (kind, id, checked) => {
+  const selected = selectionSet(kind);
+  if (checked) selected.add(Number(id));
+  else selected.delete(Number(id));
+  updateSelectionButtons();
+};
+
+window.toggleVisibleSelection = (kind, checked, idText) => {
+  const selected = selectionSet(kind);
+  const ids = idText ? idText.split(",").filter(Boolean).map(Number) : [];
+  ids.forEach((id) => {
+    if (checked) selected.add(id);
+    else selected.delete(id);
+  });
+  if (kind === "process") loadProcesses();
+  else renderDataTable();
+};
+
 function num(value) {
   return `<span class="${Number(value) === 0 ? "zero" : ""} num">${fmt(value)}</span>`;
 }
@@ -534,7 +588,9 @@ function renderDataTable() {
   const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
   state.page = Math.min(state.page, pages);
   rows = rows.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
-  renderTable("#dataTable", ["날짜", "Line", "Type", "Process", "현황", "총체결", "NG", "NG율", "Etc", "Etc%", "Cluster", "비고", "관리"], rows.map((row) => [
+  const visibleIds = rows.map((row) => row.id);
+  renderTable("#dataTable", [selectionHead("measurement", visibleIds), "날짜", "Line", "Type", "Process", "현황", "총체결", "NG", "NG율", "Etc", "Etc%", "Cluster", "비고", "관리"], rows.map((row) => [
+    selectionCell("measurement", row.id),
     row.date,
     row.line,
     row.type,
@@ -547,9 +603,10 @@ function renderDataTable() {
     warnPct(row.etcRate, "etc_rate_threshold"),
     num(row.clusterCount),
     `<button onclick="showNote('${encodeURIComponent(row.note)}')">${esc(row.note).slice(0, 18)}</button>`,
-    isAdmin ? `<button onclick="editMeasurement(${row.id})">수정</button> <button onclick="delMeasurement(${row.id})">삭제</button>` : "-",
+    isAdmin ? `<button onclick="editMeasurement(${row.id})">수정</button>` : "-",
   ]));
   $("#pager").innerHTML = `<button ${state.page <= 1 ? "disabled" : ""} onclick="state.page--;renderDataTable()">이전</button><span>${state.page} / ${pages}</span><button ${state.page >= pages ? "disabled" : ""} onclick="state.page++;renderDataTable()">다음</button>`;
+  updateSelectionButtons();
 }
 
 window.showNote = (note) => modal("비고", decodeURIComponent(note) || "비고가 없습니다");
@@ -631,6 +688,23 @@ async function delMeasurement(id) {
   });
 }
 
+async function deleteSelectedMeasurements() {
+  if (!isAdmin) return;
+  const ids = [...state.selectedMeasurements];
+  if (!ids.length) {
+    toast("삭제할 데이터를 선택하세요");
+    return;
+  }
+  modal("선택 데이터 삭제", `선택한 데이터 ${ids.length}건을 삭제합니다.`, async () => {
+    for (const id of ids) {
+      await api(`/api/measurements/${id}`, { method: "DELETE" });
+    }
+    state.selectedMeasurements.clear();
+    toast(`삭제했습니다 (${ids.length}건)`);
+    refreshAll();
+  });
+}
+
 function parseBulkTextLocal() {
   const lines = $("#bulkText").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const matrix = lines.map((line) => line.replace(/\t/g, " ").split(/\s+/));
@@ -678,15 +752,22 @@ async function saveBulkText() {
 }
 
 async function loadProcesses() {
-  const rows = filteredProcesses(false, await api("/api/processes"));
-  renderTable("#processTable", ["Type", "Line", "Process", "현황", "활성", "관리"], rows.map((row) => [
+  const query = $("#processSearch").value?.toLowerCase() || "";
+  const rows = filteredProcesses(false, await api("/api/processes"))
+    .filter((row) => !query || JSON.stringify(row).toLowerCase().includes(query));
+  const rowIds = new Set(rows.map((row) => Number(row.id)));
+  state.selectedProcesses = new Set([...state.selectedProcesses].filter((id) => rowIds.has(Number(id))));
+  const visibleIds = rows.map((row) => row.id);
+  renderTable("#processTable", [selectionHead("process", visibleIds), "Type", "Line", "Process", "현황", "활성", "관리"], rows.map((row) => [
+    selectionCell("process", row.id),
     row.type,
     row.line,
     row.processName,
     row.status,
     row.isActive ? "활성" : "비활성",
-    isAdmin ? `<button onclick="editProcess(${row.id})">수정</button> <button onclick="toggleProcess(${row.id},${!row.isActive})">${row.isActive ? "비활성화" : "활성화"}</button> <button onclick="deleteProcess(${row.id})">삭제</button>` : "-",
+    isAdmin ? `<button onclick="editProcess(${row.id})">수정</button> <button onclick="toggleProcess(${row.id},${!row.isActive})">${row.isActive ? "비활성화" : "활성화"}</button>` : "-",
   ]));
+  updateSelectionButtons();
 }
 
 window.editProcess = async (id, originView = null) => {
@@ -737,6 +818,29 @@ window.deleteProcess = async (id) => {
     refreshAll();
   });
 };
+
+async function deleteSelectedProcesses() {
+  if (!isAdmin) return;
+  const ids = [...state.selectedProcesses];
+  if (!ids.length) {
+    toast("삭제할 공정을 선택하세요");
+    return;
+  }
+  modal("선택 공정 삭제", `선택한 공정 ${ids.length}개를 삭제합니다. 실적 데이터가 있는 활성 공정은 먼저 비활성화됩니다.`, async () => {
+    const summary = { deleted: 0, deactivated: 0 };
+    for (const id of ids) {
+      const result = await api(`/api/processes/${id}`, { method: "DELETE" });
+      if (result.mode === "deactivated") summary.deactivated += 1;
+      else summary.deleted += 1;
+    }
+    state.selectedProcesses.clear();
+    toast(`삭제 ${summary.deleted}건, 비활성화 ${summary.deactivated}건`);
+    state.options = await api("/api/options");
+    hydrateOptions();
+    loadProcesses();
+    refreshAll();
+  });
+}
 
 async function loadUsers() {
   const rows = await api("/api/users");

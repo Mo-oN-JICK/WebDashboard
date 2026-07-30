@@ -95,6 +95,7 @@
           <select id="pageSize"><option>20</option><option>50</option><option>100</option></select>
           <button id="exportXlsx" class="ghost">Excel 내보내기</button>
           <button id="exportCsv" class="ghost">CSV 내보내기</button>
+          <button id="deleteSelectedMeasurements" class="ghost admin-only">선택 삭제</button>
         </div>
         <article class="panel">
           <h3>일반 목록 보기</h3>
@@ -134,7 +135,7 @@
       </section>
 
       <section id="view-processes" class="view">
-        <article class="panel"><div class="panel-head"><h3>공정 관리</h3><button id="newProcess" class="primary admin-only">공정 등록</button></div><input id="processSearch" placeholder="공정 검색"><div class="table-wrap"><table id="processTable"></table></div></article>
+        <article class="panel"><div class="panel-head"><h3>공정 관리</h3><div class="panel-actions"><button id="deleteSelectedProcesses" class="ghost admin-only">선택 삭제</button><button id="newProcess" class="primary admin-only">공정 등록</button></div></div><input id="processSearch" placeholder="공정 검색"><div class="table-wrap"><table id="processTable"></table></div></article>
       </section>
       <section id="view-import" class="view">
         <article class="panel"><h3>Excel 및 CSV 가져오기</h3><form id="importForm" class="form-grid"><label class="wide">파일 선택<input type="file" name="file" accept=".xlsx,.xls,.csv" required></label><label>중복 처리<select name="duplicateMode"><option value="overwrite">기존 데이터 덮어쓰기</option><option value="keep">기존 데이터 유지</option><option value="skip">중복 행 제외</option></select></label><button class="primary admin-only" type="submit">검증 후 저장</button></form><pre id="importResult" class="result"></pre></article>
