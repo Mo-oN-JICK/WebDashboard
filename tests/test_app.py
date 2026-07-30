@@ -163,3 +163,17 @@ def test_process_delete_with_data_deactivates(client):
     assert res.status_code == 200
     assert res.get_json()["mode"] == "deactivated"
     assert ProcessMaster.query.get(proc.id).isActive is False
+
+
+def test_inactive_process_delete_removes_data_and_process(client):
+    login(client)
+    proc = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first()
+    proc_id = proc.id
+    first = client.delete(f"/api/processes/{proc_id}")
+    assert first.get_json()["mode"] == "deactivated"
+    second = client.delete(f"/api/processes/{proc_id}")
+    assert second.status_code == 200
+    assert second.get_json()["mode"] == "deleted"
+    assert second.get_json()["deletedMeasurements"] >= 1
+    assert DailyMeasurement.query.filter_by(processId=proc_id).count() == 0
+    assert ProcessMaster.query.get(proc_id) is None

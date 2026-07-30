@@ -456,12 +456,22 @@ def update_process(proc_id: int):
 def delete_process(proc_id: int):
     proc = ProcessMaster.query.get_or_404(proc_id)
     before = {"line": proc.line, "type": proc.type, "processName": proc.processName, "status": proc.status, "isActive": proc.isActive}
-    has_data = DailyMeasurement.query.filter_by(processId=proc.id).first() is not None
-    if has_data:
+    measurements = DailyMeasurement.query.filter_by(processId=proc.id).all()
+    has_data = len(measurements) > 0
+    if has_data and proc.isActive:
         proc.isActive = False
         add_audit(current_user(), "삭제", "ProcessMaster", proc.id, before, {"isActive": False, "mode": "deactivate"})
         db.session.commit()
         return jsonify({"ok": True, "mode": "deactivated"})
+    if has_data:
+        deleted_measurements = len(measurements)
+        for measurement in measurements:
+            add_audit(current_user(), "삭제", "DailyMeasurement", measurement.id, measurement_dict(measurement), None)
+            db.session.delete(measurement)
+        add_audit(current_user(), "삭제", "ProcessMaster", proc.id, before, {"mode": "deleted_with_measurements", "deletedMeasurements": deleted_measurements})
+        db.session.delete(proc)
+        db.session.commit()
+        return jsonify({"ok": True, "mode": "deleted", "deletedMeasurements": deleted_measurements})
     add_audit(current_user(), "삭제", "ProcessMaster", proc.id, before, None)
     db.session.delete(proc)
     db.session.commit()
