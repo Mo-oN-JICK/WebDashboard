@@ -86,7 +86,7 @@ function params() {
   ["start", "end"].forEach((id) => {
     if ($("#" + id).value) search.set(id, $("#" + id).value);
   });
-  ["line", "type", "process", "status"].forEach((key) => {
+  ["type", "line", "process"].forEach((key) => {
     checkedValues(key).forEach((value) => search.append(key, value));
   });
   const query = $("#globalSearch")?.value;
@@ -109,7 +109,6 @@ async function init() {
 function hydrateOptions() {
   renderFilterOptions("line", state.options.lines);
   renderFilterOptions("type", state.options.types);
-  renderFilterOptions("status", state.options.statuses);
   renderFilterOptions("process", state.options.processes.map((p) => p.processName));
   fillProcess("[name=processId]");
   fillProcess("#bulkTextProcess");
@@ -149,6 +148,7 @@ function bind() {
     ["start", "end"].forEach((id) => { $("#" + id).value = ""; });
     $$(`.filter-menu input[type="checkbox"]`).forEach((input) => { input.checked = false; });
     updateFilterCounts();
+    updateTrendTitle();
     history.replaceState(null, "", location.pathname);
     refreshAll();
   };
@@ -158,10 +158,11 @@ function bind() {
       $$(".quick-buttons button").forEach((item) => item.classList.toggle("active", item === button));
     };
   });
-  ["line", "type", "process", "status"].forEach((name) => {
+  ["type", "line", "process"].forEach((name) => {
     $(`#${name}Options`).addEventListener("change", () => {
-      if (name === "line") linkedFilters();
+      if (name === "type" || name === "line") linkedFilters();
       updateFilterCounts();
+      updateTrendTitle();
     });
   });
   $$(".filter-menu").forEach((details) => {
@@ -242,21 +243,50 @@ function quickRange(value) {
 }
 
 function linkedFilters() {
+  const types = checkedValues("type");
   const lines = checkedValues("line");
-  const currentTypes = new Set(checkedValues("type"));
+  const currentLines = new Set(lines);
   const currentProcesses = new Set(checkedValues("process"));
-  const processes = state.options.processes.filter((process) => !lines.length || lines.includes(process.line));
-  renderFilterOptions("type", [...new Set(processes.map((process) => process.type))].sort());
+  const typeFiltered = state.options.processes.filter((process) => !types.length || types.includes(process.type));
+  renderFilterOptions("line", [...new Set(typeFiltered.map((process) => process.line))].sort());
+  $$(`input[name="lineFilter"]`).forEach((input) => { input.checked = currentLines.has(input.value); });
+  const refreshedLines = checkedValues("line");
+  const processes = typeFiltered.filter((process) => !refreshedLines.length || refreshedLines.includes(process.line));
   renderFilterOptions("process", [...new Set(processes.map((process) => process.processName))].sort());
-  $$(`input[name="typeFilter"]`).forEach((input) => { input.checked = currentTypes.has(input.value); });
   $$(`input[name="processFilter"]`).forEach((input) => { input.checked = currentProcesses.has(input.value); });
 }
 
 function updateFilterCounts() {
-  ["line", "type", "process", "status"].forEach((name) => {
+  ["type", "line", "process"].forEach((name) => {
     const count = checkedValues(name).length;
     $(`#${name}Count`).textContent = count ? `${count}개` : "전체";
   });
+}
+
+function updateTrendTitle() {
+  const title = $("#trendTitle");
+  if (!title || !state.options) return;
+  const selectedProcesses = checkedValues("process");
+  if (selectedProcesses.length === 0) {
+    title.textContent = "날짜별 추이 그래프";
+    return;
+  }
+  if (selectedProcesses.length > 1) {
+    title.textContent = `선택 Process ${selectedProcesses.length}개 날짜별 추이 그래프`;
+    return;
+  }
+  const selectedTypes = checkedValues("type");
+  const selectedLines = checkedValues("line");
+  const process = state.options.processes.find((item) => (
+    item.processName === selectedProcesses[0]
+    && (!selectedTypes.length || selectedTypes.includes(item.type))
+    && (!selectedLines.length || selectedLines.includes(item.line))
+  )) || state.options.processes.find((item) => item.processName === selectedProcesses[0]);
+  if (!process) {
+    title.textContent = `${selectedProcesses[0]} 날짜별 추이 그래프`;
+    return;
+  }
+  title.textContent = `[${process.line}] ${process.processName} 날짜별 추이 그래프 ${process.status || ""}`.trim();
 }
 
 function applyUrl() {
@@ -267,18 +297,19 @@ function applyUrl() {
     const sevenDayButton = $('.quick-buttons button[data-range="7"]');
     if (sevenDayButton) sevenDayButton.classList.add("active");
   }
-  ["line", "type", "process", "status"].forEach((name) => {
+  ["type", "line", "process"].forEach((name) => {
     const values = search.getAll(name);
     $$(`input[name="${name}Filter"]`).forEach((input) => {
       input.checked = values.includes(input.value);
     });
   });
   linkedFilters();
-  ["type", "process", "status"].forEach((name) => {
+  ["line", "process"].forEach((name) => {
     const values = search.getAll(name);
     $$(`input[name="${name}Filter"]`).forEach((input) => { input.checked = values.includes(input.value); });
   });
   updateFilterCounts();
+  updateTrendTitle();
 }
 
 async function refreshAll() {
@@ -294,6 +325,7 @@ async function loadDashboard() {
   state.trends = trends;
   state.processCompare = processCompare;
   renderDailyMain(trends);
+  updateTrendTitle();
   chartTrend(trends);
   renderKpis(dashboard);
   renderProcessRank();

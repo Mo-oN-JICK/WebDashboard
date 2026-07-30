@@ -47,10 +47,9 @@
           <button data-range="7" class="ghost active">7일</button>
           <button data-range="30" class="ghost">30일</button>
         </div>
-        <details class="filter-menu" data-filter="line"><summary>Line <b id="lineCount">전체</b></summary><div id="lineOptions" class="menu-options"></div></details>
         <details class="filter-menu" data-filter="type"><summary>Type <b id="typeCount">전체</b></summary><div id="typeOptions" class="menu-options"></div></details>
+        <details class="filter-menu" data-filter="line"><summary>Line <b id="lineCount">전체</b></summary><div id="lineOptions" class="menu-options"></div></details>
         <details class="filter-menu" data-filter="process"><summary>Process <b id="processCount">전체</b></summary><div id="processOptions" class="menu-options"></div></details>
-        <details class="filter-menu" data-filter="status"><summary>현황 <b id="statusCount">전체</b></summary><div id="statusOptions" class="menu-options"></div></details>
         <div id="metricFilter" class="metric-toggles" aria-label="그래프 구분">
           <label><input type="checkbox" value="totalCount" checked>총체결</label>
           <label><input type="checkbox" value="ngCount" checked>NG</label>
@@ -67,7 +66,7 @@
       <section id="view-dashboard" class="view active">
         <article class="panel hero-panel">
           <div class="panel-head">
-            <h3>날짜별 추이 그래프</h3>
+            <h3 id="trendTitle">날짜별 추이 그래프</h3>
             <div class="panel-actions">
               <button id="exportXlsxMain" class="ghost">Excel 내보내기</button>
               <button id="saveTrendPng" class="ghost">PNG 저장</button>
