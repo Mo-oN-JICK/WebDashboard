@@ -441,6 +441,12 @@ function positionFilterMenu(details) {
 
 function chartTrend(rows) {
   const metrics = selectedMetrics();
+  const hasNgEtcStack = metrics.includes("ngEtcStack");
+  const lineCountMetrics = metrics.filter((metric) => metric !== "ngEtcStack" && !metric.includes("Rate"));
+  const stackedMax = hasNgEtcStack ? Math.max(...rows.map((row) => Number(row.ngCount || 0) + Number(row.etcCount || 0)), 0) : 0;
+  const lineCountMax = lineCountMetrics.length ? Math.max(...rows.flatMap((row) => lineCountMetrics.map((metric) => Number(row[metric] || 0))), 0) : 0;
+  const countMax = Math.max(stackedMax, lineCountMax);
+  const countScale = countMax > 0 ? { suggestedMax: Math.ceil(countMax * 1.12) } : {};
   const colors = {
     totalCount: "#5b8cff",
     ngCount: "#ff5d5d",
@@ -460,7 +466,7 @@ function chartTrend(rows) {
         borderColor: "#ff5d5d",
         borderWidth: 1,
         stack: "ngEtc",
-        yAxisID: "count",
+        yAxisID: "stackCount",
         order: 2,
       },
       {
@@ -471,7 +477,7 @@ function chartTrend(rows) {
         borderColor: "#ffb020",
         borderWidth: 1,
         stack: "ngEtc",
-        yAxisID: "count",
+        yAxisID: "stackCount",
         order: 2,
       },
     );
@@ -494,9 +500,10 @@ function chartTrend(rows) {
     datasets,
   }, {
     scales: {
-      count: { position: "left", stacked: metrics.includes("ngEtcStack"), ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
+      count: { position: "left", stacked: false, ...countScale, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
+      stackCount: { position: "left", display: false, stacked: true, ...countScale, grid: { display: false } },
       pct: { position: "right", ticks: { color: "#a8b3c7", callback: (value) => value + "%" }, grid: { drawOnChartArea: false } },
-      x: { stacked: metrics.includes("ngEtcStack"), ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
+      x: { stacked: false, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },
   });
 }
