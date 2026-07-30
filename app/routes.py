@@ -139,22 +139,25 @@ def etc_consecutive_alerts(args) -> list[dict]:
         consecutive_count = max(1, int(float(setting.value if setting else "3")))
     except (TypeError, ValueError):
         consecutive_count = 3
-    rows = filtered_query(args).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
+    rows = DailyMeasurement.query.join(ProcessMaster).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
     alerts = []
     grouped: dict[int, list[DailyMeasurement]] = {}
     for row in rows:
         grouped.setdefault(row.processId, []).append(row)
 
-    def append_alert(streak: list[DailyMeasurement]) -> None:
-        if len(streak) < consecutive_count:
-            return
-        blank_rows = [item for item in streak if not (item.note or "").strip()]
+    for process_rows in grouped.values():
+        if len(process_rows) < consecutive_count:
+            continue
+        recent_rows = process_rows[-consecutive_count:]
+        if not all(rate(item.etcCount, item.totalCount) >= threshold for item in recent_rows):
+            continue
+        blank_rows = [item for item in recent_rows if not (item.note or "").strip()]
         if not blank_rows:
-            return
-        first = streak[0]
+            continue
+        first = recent_rows[0]
         alerts.append(
             {
-                "id": f"etc_streak:{first.processId}:{consecutive_count}:{','.join(item.measurementDate.isoformat() for item in streak)}",
+                "id": f"etc_streak:{first.processId}:{consecutive_count}:{','.join(item.measurementDate.isoformat() for item in recent_rows)}",
                 "alertType": "etc_streak",
                 "level": "warning",
                 "title": f"Etc% {threshold}% 이상 {consecutive_count}회 연속",
@@ -165,20 +168,10 @@ def etc_consecutive_alerts(args) -> list[dict]:
                 "status": first.process.status,
                 "threshold": threshold,
                 "requiredCount": consecutive_count,
-                "streakDates": [item.measurementDate.isoformat() for item in streak],
+                "streakDates": [item.measurementDate.isoformat() for item in recent_rows],
                 "blankNoteDates": [item.measurementDate.isoformat() for item in blank_rows],
             }
         )
-
-    for process_rows in grouped.values():
-        streak: list[DailyMeasurement] = []
-        for row in process_rows:
-            if rate(row.etcCount, row.totalCount) >= threshold:
-                streak.append(row)
-            else:
-                append_alert(streak)
-                streak = []
-        append_alert(streak)
     return alerts
 
 
@@ -186,7 +179,7 @@ def etc_daily_increase_alerts(args) -> list[dict]:
     threshold = setting_float("etc_daily_increase_threshold", 0)
     if threshold <= 0:
         return []
-    rows = filtered_query(args).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
+    rows = DailyMeasurement.query.join(ProcessMaster).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
     grouped: dict[int, list[DailyMeasurement]] = {}
     for row in rows:
         grouped.setdefault(row.processId, []).append(row)
@@ -229,10 +222,6 @@ def stale_process_alerts(args) -> list[dict]:
         return []
     today = datetime.now(KST).date()
     query = ProcessMaster.query.filter_by(isActive=True)
-    for key, col in {"line": ProcessMaster.line, "type": ProcessMaster.type, "process": ProcessMaster.processName}.items():
-        values = arg_values(args, key)
-        if values:
-            query = query.filter(col.in_(values))
     alerts = []
     for proc in query.order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName).all():
         last = DailyMeasurement.query.filter_by(processId=proc.id).order_by(desc(DailyMeasurement.measurementDate)).first()
@@ -267,13 +256,6 @@ def setting_float(key: str, default: float) -> float:
         return float(setting.value if setting else default)
     except (TypeError, ValueError):
         return default
-
-
-def arg_values(args, key: str) -> list[str]:
-    values = args.getlist(key) if hasattr(args, "getlist") else args.get(key, [])
-    if isinstance(values, str):
-        values = [value for value in values.split(",") if value]
-    return values
 
 
 @bp.get("/api/trends")

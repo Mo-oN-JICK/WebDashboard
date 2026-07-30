@@ -92,6 +92,18 @@ def test_dashboard_alerts_for_consecutive_etc_blank_notes(client):
     assert alerts[0]["blankNoteDates"] == ["2026-08-01", "2026-08-02", "2026-08-03"]
 
 
+def test_consecutive_etc_alert_checks_latest_n_only(client):
+    login(client)
+    proc_id = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first().id
+    user = User.query.filter_by(username="admin").first()
+    for day, etc in [(date(2026, 8, 1), 1), (date(2026, 8, 2), 1), (date(2026, 8, 3), 1), (date(2026, 8, 4), 0)]:
+        db.session.add(DailyMeasurement(processId=proc_id, measurementDate=day, totalCount=100, ngCount=0, etcCount=etc, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
+    db.session.commit()
+    res = client.get("/api/dashboard?start=2026-08-01&end=2026-08-03")
+    alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "etc_streak"]
+    assert alerts == []
+
+
 def test_dashboard_alerts_for_daily_etc_spike(client):
     login(client)
     setting = AppSetting.query.get("etc_daily_increase_threshold")
@@ -133,11 +145,10 @@ def test_dashboard_alerts_for_stale_process(client):
     old_day = datetime.now().date() - timedelta(days=3)
     db.session.add(DailyMeasurement(processId=proc.id, measurementDate=old_day, totalCount=100, ngCount=0, etcCount=0, clusterCount=0, note="", createdBy=user.id, updatedBy=user.id))
     db.session.commit()
-    res = client.get("/api/dashboard?type=FAS4.0&line=RC&process=Stale Process")
+    res = client.get("/api/dashboard?type=Unrelated&line=ZZ&process=Hidden")
     alerts = [alert for alert in res.get_json()["alerts"] if alert["alertType"] == "missing_data"]
-    assert len(alerts) == 1
-    assert alerts[0]["level"] == "notice"
-    assert alerts[0]["processName"] == "Stale Process"
+    stale_alert = next(alert for alert in alerts if alert["processName"] == "Stale Process")
+    assert stale_alert["level"] == "notice"
 
 
 def test_excel_import_validation(app):
