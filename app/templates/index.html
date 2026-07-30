@@ -152,7 +152,7 @@
     </main>
   </div>
 
-  <dialog id="modal"><form method="dialog"><h3 id="modalTitle"></h3><div id="modalBody"></div><menu><button value="cancel" class="ghost">취소</button><button id="modalOk" value="ok" class="primary">확인</button></menu></form></dialog>
+  <dialog id="modal"><form id="modalForm"><h3 id="modalTitle"></h3><div id="modalBody"></div><menu><button id="modalCancel" type="button" class="ghost">취소</button><button id="modalOk" type="submit" class="primary">확인</button></menu></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script>window.APP_USER = {role: "{{ current_user.role }}", name: "{{ current_user.name }}"};</script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>

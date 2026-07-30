@@ -758,14 +758,35 @@ async function saveSettings(event) {
 }
 
 function modalData() {
-  return Object.fromEntries(new FormData($("#modal form")));
+  return Object.fromEntries(new FormData($("#modalForm")));
 }
 
 function modal(title, body, onOk) {
+  const dialog = $("#modal");
+  const form = $("#modalForm");
+  const okButton = $("#modalOk");
   $("#modalTitle").textContent = title;
   $("#modalBody").innerHTML = body;
-  $("#modalOk").onclick = () => onOk && onOk();
-  $("#modal").showModal();
+  okButton.disabled = false;
+  $("#modalCancel").onclick = () => dialog.close("cancel");
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    if (!onOk) {
+      dialog.close("ok");
+      return;
+    }
+    okButton.disabled = true;
+    try {
+      await onOk();
+      dialog.close("ok");
+    } catch (error) {
+      toast(error.message || "처리 중 오류가 발생했습니다");
+    } finally {
+      okButton.disabled = false;
+    }
+  };
+  dialog.showModal();
 }
 
 $("#exportMissing").onclick = () => toast("누락 목록은 화면 표에서 확인할 수 있습니다");
