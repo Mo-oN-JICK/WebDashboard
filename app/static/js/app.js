@@ -852,26 +852,42 @@ async function deleteSelectedMeasurements() {
 }
 
 function parseBulkTextLocal() {
-  const lines = $("#bulkText").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const matrix = lines.map((line) => line.replace(/\t/g, " ").split(/\s+/));
-  const dates = (matrix[0] || []).filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item));
+  const lines = $("#bulkText").value.split(/\r?\n/).map((line) => line.replace(/\r$/, "")).filter((line) => line.trim());
+  const matrix = lines.map(splitBulkLineLocal);
+  const dateColumns = (matrix[0] || []).map((item, index) => ({ index, date: normalizeBulkDateLocal(item) })).filter((item) => item.date);
+  const firstDateIndex = dateColumns[0]?.index ?? 0;
+  const dates = dateColumns.map((item) => item.date);
   const rows = dates.map((day) => ({ date: day, totalCount: 0, ngCount: 0, etcCount: 0, clusterCount: 0 }));
   const keyMap = { "총체결": "totalCount", "총 체결": "totalCount", "NG": "ngCount", "ETC": "etcCount", "Etc": "etcCount", "Cluster": "clusterCount", "Cluster(Upper)": "clusterCount" };
   matrix.slice(1).forEach((parts) => {
     const parsed = splitBulkLabelLocal(parts, keyMap);
     const key = keyMap[parsed.label];
     if (!key) return;
-    rows.forEach((row, index) => { row[key] = Number(parsed.values[index] || 0); });
+    rows.forEach((row, rowIndex) => {
+      const valueIndex = firstDateIndex > 0 ? dateColumns[rowIndex].index : dateColumns[rowIndex].index + parsed.width;
+      row[key] = Number(parts[valueIndex] || 0);
+    });
   });
   return rows;
+}
+
+function splitBulkLineLocal(line) {
+  return line.includes("\t") ? line.split("\t").map((cell) => cell.trim()) : line.trim().split(/\s+/);
+}
+
+function normalizeBulkDateLocal(value) {
+  const text = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{2}-\d{2}$/.test(text)) return `${new Date().getFullYear()}-${text}`;
+  return null;
 }
 
 function splitBulkLabelLocal(parts, keyMap) {
   if (parts.length >= 2) {
     const twoWordLabel = `${parts[0]} ${parts[1]}`;
-    if (keyMap[twoWordLabel]) return { label: twoWordLabel, values: parts.slice(2) };
+    if (keyMap[twoWordLabel]) return { label: twoWordLabel, width: 2 };
   }
-  return { label: parts[0], values: parts.slice(1) };
+  return { label: parts[0], width: 1 };
 }
 
 function renderBulkTextPreview() {

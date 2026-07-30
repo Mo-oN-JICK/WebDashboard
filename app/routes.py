@@ -348,13 +348,15 @@ def save_bulk_rows(rows: list[dict]) -> dict:
 
 
 def parse_bulk_text(text: str, process_id: int) -> list[dict]:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    lines = [line.rstrip("\r") for line in text.splitlines() if line.strip()]
     if not lines:
         raise ValueError("붙여넣은 데이터가 없습니다")
-    matrix = [line.replace("\t", " ").split() for line in lines]
-    dates = [token for token in matrix[0] if looks_like_date(token)]
-    if not dates:
+    matrix = [split_bulk_line(line) for line in lines]
+    date_columns = [(idx, normalize_bulk_date(cell)) for idx, cell in enumerate(matrix[0]) if normalize_bulk_date(cell)]
+    if not date_columns:
         raise ValueError("첫 행에서 날짜를 찾지 못했습니다")
+    first_date_index = date_columns[0][0]
+    dates = [date_value for _, date_value in date_columns]
     rows = [{"processId": process_id, "measurementDate": d} for d in dates]
     mapping = {
         "총체결": "totalCount",
@@ -373,12 +375,13 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
         "비고": "note",
     }
     for parts in matrix[1:]:
-        label, values = split_bulk_label(parts, mapping)
+        label, label_width = split_bulk_label(parts, mapping)
         field = mapping.get(label)
         if not field:
             continue
-        for idx, row in enumerate(rows):
-            row[field] = values[idx] if idx < len(values) else ""
+        for row_index, (date_index, _) in enumerate(date_columns):
+            value_index = date_index if first_date_index > 0 else date_index + label_width
+            rows[row_index][field] = parts[value_index] if value_index < len(parts) else ""
     for row in rows:
         upper = to_int(row.get("clusterUpperCount", 0), "Cluster(Upper)")
         near = to_int(row.get("clusterLowerNearCount", 0), "Cluster(Lower(Near))")
@@ -391,20 +394,38 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
     return rows
 
 
-def split_bulk_label(parts: list[str], mapping: dict[str, str]) -> tuple[str, list[str]]:
+def split_bulk_line(line: str) -> list[str]:
+    if "\t" in line:
+        return [cell.strip() for cell in line.split("\t")]
+    return line.split()
+
+
+def split_bulk_label(parts: list[str], mapping: dict[str, str]) -> tuple[str, int]:
     if len(parts) >= 2:
         two_word_label = f"{parts[0]} {parts[1]}"
         if two_word_label in mapping:
-            return two_word_label, parts[2:]
-    return parts[0], parts[1:]
+            return two_word_label, 2
+    return parts[0], 1
 
 
 def looks_like_date(value: str) -> bool:
+    return normalize_bulk_date(value) is not None
+
+
+def normalize_bulk_date(value: str) -> str | None:
+    value = str(value or "").strip()
     try:
-        date.fromisoformat(value)
-        return True
+        return date.fromisoformat(value).isoformat()
     except ValueError:
-        return False
+        pass
+    if len(value) == 5 and value[2] == "-":
+        try:
+            month, day = [int(part) for part in value.split("-")]
+            parsed = date(datetime.now(KST).year, month, day)
+            return parsed.isoformat()
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def apply_extra_counts(item: DailyMeasurement, data: dict) -> None:

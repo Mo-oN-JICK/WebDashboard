@@ -150,6 +150,23 @@ ETC\t5\t6"""
     assert row.clusterCount == 31
 
 
+def test_bulk_text_preserves_blank_excel_cells(client):
+    login(client)
+    proc_id = ProcessMaster.query.filter_by(processName="RAJ Middle-Screw").first().id
+    text = """\t2026-07-28\t2026-07-29
+총체결\t100\t200
+NG\t1\t2
+ETC\t3\t4
+비고\t\t재학습"""
+    res = client.post("/api/bulk-text", json={"processId": proc_id, "text": text})
+    assert res.status_code == 200
+    assert res.get_json()["failed"] == 0
+    first = DailyMeasurement.query.filter_by(processId=proc_id, measurementDate=date(2026, 7, 28)).first()
+    second = DailyMeasurement.query.filter_by(processId=proc_id, measurementDate=date(2026, 7, 29)).first()
+    assert first.note == ""
+    assert second.note == "재학습"
+
+
 def test_process_create_defaults_blank_status_and_delete_without_data(client):
     login(client)
     res = client.post("/api/processes", json={"type": "FAS3.0", "line": "RB", "processName": "No Data Process"})
