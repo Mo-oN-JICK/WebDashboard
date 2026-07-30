@@ -14,6 +14,8 @@ const state = {
   pageSize: 20,
   pivotDesc: false,
   activeView: "dashboard",
+  datePickerMonth: null,
+  pendingRangeStart: "",
   charts: {},
 };
 
@@ -50,6 +52,13 @@ function fmt(value) {
 
 function pct(value) {
   return `${Number(value ?? 0).toFixed(2)}%`;
+}
+
+function isoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function esc(value) {
@@ -153,6 +162,80 @@ function updateMetricCount() {
   if (target) target.textContent = count ? `${count}개` : "없음";
 }
 
+function updateDateRangeLabel() {
+  const start = $("#start").value;
+  const end = $("#end").value;
+  const label = $("#dateRangeLabel");
+  if (!label) return;
+  if (start && end) label.textContent = start === end ? start : `${start} ~ ${end}`;
+  else if (start) label.textContent = `${start} ~`;
+  else label.textContent = "전체";
+}
+
+function setDateRange(start, end, apply = true) {
+  $("#start").value = start || "";
+  $("#end").value = end || "";
+  updateDateRangeLabel();
+  renderDateRangePicker();
+  if (apply) applyFiltersImmediately();
+}
+
+function renderDateRangePicker() {
+  const target = $("#dateRangePicker");
+  if (!target) return;
+  const selectedStart = $("#start").value;
+  const selectedEnd = $("#end").value;
+  const base = state.datePickerMonth
+    ? new Date(state.datePickerMonth)
+    : new Date(`${selectedStart || selectedEnd || isoDate(new Date())}T00:00:00`);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const first = new Date(year, month, 1);
+  const startCell = new Date(year, month, 1 - first.getDay());
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(startCell);
+    day.setDate(startCell.getDate() + index);
+    const value = isoDate(day);
+    const inMonth = day.getMonth() === month;
+    const inRange = selectedStart && selectedEnd && value >= selectedStart && value <= selectedEnd;
+    const isEdge = value === selectedStart || value === selectedEnd;
+    return `<button type="button" class="${inMonth ? "" : "muted-day"} ${inRange ? "in-range" : ""} ${isEdge ? "range-edge" : ""}" data-date="${value}">${day.getDate()}</button>`;
+  }).join("");
+  target.innerHTML = `
+    <div class="date-picker-head">
+      <button type="button" class="ghost" data-month-step="-1">‹</button>
+      <strong>${year}-${String(month + 1).padStart(2, "0")}</strong>
+      <button type="button" class="ghost" data-month-step="1">›</button>
+    </div>
+    <div class="date-picker-state">${state.pendingRangeStart ? `시작일 ${esc(state.pendingRangeStart)} · 종료일 선택` : "시작일 선택"}</div>
+    <div class="date-picker-week">${["일", "월", "화", "수", "목", "금", "토"].map((day) => `<span>${day}</span>`).join("")}</div>
+    <div class="date-picker-grid">${cells}</div>
+  `;
+}
+
+function shiftDatePickerMonth(step) {
+  const base = state.datePickerMonth ? new Date(state.datePickerMonth) : new Date(`${$("#start").value || isoDate(new Date())}T00:00:00`);
+  base.setMonth(base.getMonth() + Number(step));
+  state.datePickerMonth = new Date(base.getFullYear(), base.getMonth(), 1).toISOString();
+  renderDateRangePicker();
+}
+
+function chooseRangeDate(value) {
+  if (!state.pendingRangeStart || ($("#start").value && $("#end").value)) {
+    state.pendingRangeStart = value;
+    $("#start").value = value;
+    $("#end").value = "";
+    updateDateRangeLabel();
+    renderDateRangePicker();
+    return;
+  }
+  const start = value < state.pendingRangeStart ? value : state.pendingRangeStart;
+  const end = value < state.pendingRangeStart ? state.pendingRangeStart : value;
+  state.pendingRangeStart = "";
+  setDateRange(start, end, true);
+  $(".date-range-menu").open = false;
+}
+
 function params() {
   const search = new URLSearchParams();
   ["start", "end"].forEach((id) => {
@@ -190,6 +273,8 @@ function hydrateOptions() {
   });
   updateFilterCounts();
   updateMetricCount();
+  updateDateRangeLabel();
+  renderDateRangePicker();
 }
 
 function renderFilterOptions(name, values) {
@@ -285,10 +370,25 @@ function bind() {
     $("#themeToggle").textContent = document.body.classList.contains("dark") ? "밝은 모드" : "다크 모드";
   };
   ["start", "end"].forEach((id) => {
-    $("#" + id).addEventListener("change", applyFiltersImmediately);
+    $("#" + id).addEventListener("change", () => {
+      updateDateRangeLabel();
+      applyFiltersImmediately();
+    });
   });
+  $("#dateRangePicker").onclick = (event) => {
+    const monthButton = event.target.closest("[data-month-step]");
+    if (monthButton) {
+      shiftDatePickerMonth(monthButton.dataset.monthStep);
+      return;
+    }
+    const dateButton = event.target.closest("[data-date]");
+    if (dateButton) chooseRangeDate(dateButton.dataset.date);
+  };
   $("#resetFilters").onclick = () => {
-    ["start", "end"].forEach((id) => { $("#" + id).value = ""; });
+    state.pendingRangeStart = "";
+    state.datePickerMonth = null;
+    $("#quickRange").value = "7";
+    quickRange("7");
     $$(`#hiddenProcessFilters input`).forEach((input) => { input.checked = false; });
     hydrateOptions();
     updateFilterCounts();
@@ -332,6 +432,7 @@ function bind() {
     chartTrend(state.trends);
     applyFiltersImmediately(false);
   };
+  $("#processComparePercent").onchange = () => renderProcessNgEtcChart();
   $("#noticeButton").onclick = () => showAlertModal("notice");
   $("#warningButton").onclick = () => showAlertModal("warning");
   $("#closeAlertDrawer").onclick = closeAlertDrawer;
@@ -385,18 +486,19 @@ function restoreView() {
 function quickRange(value) {
   const now = new Date();
   let start = "";
-  let end = now.toISOString().slice(0, 10);
+  let end = isoDate(now);
   if (value === "today") {
     start = end;
   } else if (["7", "14", "21", "28"].includes(value)) {
     const date = new Date(now);
     date.setDate(now.getDate() - Number(value) + 1);
-    start = date.toISOString().slice(0, 10);
+    start = isoDate(date);
   } else {
     end = "";
   }
-  $("#start").value = start;
-  $("#end").value = end;
+  state.pendingRangeStart = "";
+  state.datePickerMonth = new Date(`${start || end || isoDate(now)}T00:00:00`).toISOString();
+  setDateRange(start, end, false);
 }
 
 function linkedFilters() {
@@ -480,6 +582,9 @@ function applyUrl() {
   });
   updateFilterCounts();
   updateTrendTitle();
+  updateDateRangeLabel();
+  state.datePickerMonth = new Date(`${$("#start").value || $("#end").value || isoDate(new Date())}T00:00:00`).toISOString();
+  renderDateRangePicker();
 }
 
 async function refreshAll() {
@@ -487,13 +592,16 @@ async function refreshAll() {
 }
 
 async function loadDashboard() {
-  const [dashboard, trends] = await Promise.all([
+  const [dashboard, trends, processCompare] = await Promise.all([
     api("/api/dashboard?" + params()),
     api("/api/trends?" + params()),
+    api("/api/compare/process?" + params()),
   ]);
   state.trends = trends;
+  state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
   renderDailyMain(trends);
+  renderProcessNgEtcChart();
   renderStatusSummary();
   updateTrendTitle();
   chartTrend(trends);
@@ -557,6 +665,60 @@ function renderStatusSummary() {
       <span>전체 활성 공정</span>
     </article>
   `).join("");
+}
+
+function selectedHierarchyLabel() {
+  const process = checkedValues("process")[0];
+  const line = checkedValues("line")[0];
+  const type = checkedValues("type")[0];
+  if (process) return `Process: ${process}`;
+  if (line) return `Line: ${line}`;
+  if (type) return `Type: ${type}`;
+  return "전체 공정";
+}
+
+function renderProcessNgEtcChart() {
+  const target = $("#processNgEtcChart");
+  if (!target || !state.options?.processes) return;
+  const compareMap = new Map((state.processCompare || []).map((row) => [Number(row.processId), row]));
+  const rows = filteredProcesses(true).map((process) => {
+    const data = compareMap.get(Number(process.id)) || {};
+    const totalCount = Number(data.totalCount || 0);
+    const ngCount = Number(data.ngCount || 0);
+    const etcCount = Number(data.etcCount || 0);
+    return {
+      processName: process.processName,
+      ngCount,
+      etcCount,
+      ngRate: totalCount ? ngCount / totalCount * 100 : 0,
+      etcRate: totalCount ? etcCount / totalCount * 100 : 0,
+    };
+  }).sort((a, b) => (b.ngCount + b.etcCount) - (a.ngCount + a.etcCount) || a.processName.localeCompare(b.processName));
+  const asPercent = $("#processComparePercent")?.checked;
+  $("#processNgEtcTitle").textContent = `${selectedHierarchyLabel()} NG/Etc ${asPercent ? "비율" : "누적 수량"}`;
+  const visibleRows = rows.slice(0, 30);
+  const chartHeight = Math.max(260, visibleRows.length * 34 + 80);
+  target.closest(".chart-box").style.height = `${chartHeight}px`;
+  chart("#processNgEtcChart", "bar", {
+    labels: visibleRows.map((row) => row.processName),
+    datasets: [
+      { label: asPercent ? "NG%" : "NG", data: visibleRows.map((row) => asPercent ? row.ngRate : row.ngCount), backgroundColor: "#ff8a8a" },
+      { label: asPercent ? "Etc%" : "Etc", data: visibleRows.map((row) => asPercent ? row.etcRate : row.etcCount), backgroundColor: "#ffcf6e" },
+    ],
+  }, {
+    indexAxis: "y",
+    scales: {
+      x: { stacked: false, ticks: { callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") } },
+      y: { stacked: false },
+    },
+    plugins: {
+      tooltip: {
+        callbacks: {
+          label: (context) => `${context.dataset.label}: ${asPercent ? pct(context.parsed.x) : fmt(context.parsed.x)}`,
+        },
+      },
+    },
+  });
 }
 
 function renderAlertButtons() {
@@ -827,7 +989,9 @@ function positionFilterMenu(details) {
   const rect = summary.getBoundingClientRect();
   const width = details.classList.contains("process-filter-menu")
     ? Math.min(760, window.innerWidth - 24)
-    : Math.max(230, rect.width);
+    : details.classList.contains("date-range-menu")
+      ? Math.min(320, window.innerWidth - 24)
+      : Math.max(230, rect.width);
   const maxHeight = details.classList.contains("process-filter-menu") ? 420 : 300;
   const menuHeight = Math.min(menu.scrollHeight || maxHeight, maxHeight, window.innerHeight - 24);
   menu.style.width = `${width}px`;

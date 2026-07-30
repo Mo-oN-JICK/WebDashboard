@@ -44,11 +44,12 @@
       </header>
 
       <section class="filters compact-filters" aria-label="공통 필터">
-        <div class="date-range">
-          <input type="date" id="start" aria-label="조회 시작일">
-          <span>~</span>
-          <input type="date" id="end" aria-label="조회 종료일">
-        </div>
+        <input type="date" id="start" hidden aria-label="조회 시작일">
+        <input type="date" id="end" hidden aria-label="조회 종료일">
+        <details class="filter-menu date-range-menu" data-filter="dateRange">
+          <summary>기간 <b id="dateRangeLabel">선택</b></summary>
+          <div class="menu-options date-picker" id="dateRangePicker"></div>
+        </details>
         <select id="quickRange" aria-label="빠른 기간">
           <option value="today">Today</option>
           <option value="7" selected>1주</option>
@@ -69,6 +70,7 @@
             <label class="check-option"><input type="checkbox" value="clusterCount" checked>Cluster</label>
           </div>
         </details>
+        <label class="filter-toggle"><input id="processComparePercent" type="checkbox">%로 보기</label>
         <button id="resetFilters" class="ghost">초기화</button>
       </section>
 
@@ -82,6 +84,10 @@
             </div>
           </div>
           <div class="chart-box trend-box"><canvas id="trendChart"></canvas></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><h3 id="processNgEtcTitle">선택 범위 공정별 NG/Etc</h3></div>
+          <div class="chart-box process-ng-etc-box"><canvas id="processNgEtcChart"></canvas></div>
         </article>
         <div class="table-wrap main-table-wrap main-data"><table id="dailyMainTable"></table></div>
         <section id="statusSummary" class="status-summary" aria-label="공정 현황 요약"></section>
