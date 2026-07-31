@@ -851,7 +851,7 @@ function renderSummaryCards() {
       </div>
       <div class="summary-card-main">
         <strong class="summary-current">${fmt(current)}</strong>
-        <span class="summary-target">/ ${fmt(goal)}</span>
+        <span class="summary-target">/ ${fmt(goal)}공정</span>
       </div>
       <div class="summary-card-bottom">
         <div class="summary-sub">${pct(ratio)}</div>
