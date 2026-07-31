@@ -1187,14 +1187,19 @@ function chartTrend(rows) {
     plugins: {
       noteDateHighlight: { notes: noteMap, alertDates: alertDateList },
       tooltip: {
-        filter: (item) => !item.dataset.isGuideLine,
+        filter: (item) => {
+          if (item.dataset.isGuideLine) return false;
+          if (hasNgEtcStack && ["ngCount", "etcCount"].includes(item.dataset.metricKey) && item.dataset.stack !== "ngEtc") return false;
+          return true;
+        },
         callbacks: {
           label: (context) => {
             const row = byDate[context.label];
             const metric = context.dataset.metricKey;
             const value = context.parsed.y;
-            if (row && row.hasData === false && !context.dataset.isGuideLine) return `${context.dataset.label}: NaN`;
-            return `${context.dataset.label}: ${metric?.includes("Rate") ? pct(value) : fmt(value)}`;
+            const label = context.dataset.stack === "ngEtc" ? metricLabels[metric] : context.dataset.label;
+            if (row && row.hasData === false && !context.dataset.isGuideLine) return `${label}: NaN`;
+            return `${label}: ${metric?.includes("Rate") ? pct(value) : fmt(value)}`;
           },
         },
       },
