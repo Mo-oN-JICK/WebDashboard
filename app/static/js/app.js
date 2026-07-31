@@ -697,7 +697,9 @@ async function loadDashboard() {
   state.trends = normalizeTrendRows(trends);
   state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
-  renderSummaryCards();
+  const processSelected = checkedValues("process").length > 0;
+  $("#summaryCards")?.classList.toggle("hidden", processSelected);
+  if (!processSelected) renderSummaryCards();
   renderDailyMain(state.trends);
   const groupMode = isProcessGroupTrendMode();
   $("#processNgEtcPanel")?.classList.toggle("hidden", groupMode);
@@ -806,7 +808,9 @@ function summarySparkline(values) {
   });
   const line = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
   const area = `0,${height} ${line} ${width},${height}`;
+  const lastDiff = points.length > 1 ? points[points.length - 1].value - points[points.length - 2].value : 0;
   return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="5주 변화 미니 그래프">
+    <title>전주 대비 ${lastDiff >= 0 ? "+" : ""}${fmt(lastDiff)}건</title>
     <polygon class="spark-area" points="${area}"></polygon>
     <polyline points="${line}"></polyline>
     ${points.map((point, index) => {
@@ -1327,6 +1331,7 @@ function renderGroupedProcessTrend(rows) {
             metricKey: "ngCount",
             sourceMetric: "ngEtcStack",
             processName,
+            legendLabel: processName,
             data: dates.map((date) => {
               const row = byKey.get(`${date}||${processName}`) || {};
               return asPercent ? Number(row.ngRate || 0) : Number(row.ngCount || 0);
@@ -1342,6 +1347,7 @@ function renderGroupedProcessTrend(rows) {
             metricKey: "etcCount",
             sourceMetric: "ngEtcStack",
             processName,
+            legendLabel: processName,
             data: dates.map((date) => {
               const row = byKey.get(`${date}||${processName}`) || {};
               return asPercent ? Number(row.etcRate || 0) : Number(row.etcCount || 0);
@@ -1362,6 +1368,7 @@ function renderGroupedProcessTrend(rows) {
         metricKey: metric,
         sourceMetric: metric,
         processName,
+        legendLabel: processName,
         data: dates.map((date) => processTrendValue(byKey.get(`${date}||${processName}`) || {}, metric, asPercent)),
         backgroundColor: processColor(processIndex, selected.length === 1 ? 0.78 : Math.max(0.38, 0.78 - metricIndex * 0.12)),
         borderColor: processColor(processIndex, 1),
@@ -1376,8 +1383,49 @@ function renderGroupedProcessTrend(rows) {
     labels: dates,
     datasets,
   }, {
+    interaction: { mode: "nearest", intersect: true },
     plugins: {
+      legend: {
+        labels: {
+          generateLabels: (chartInstance) => {
+            const seen = new Set();
+            return chartInstance.data.datasets.flatMap((dataset, datasetIndex) => {
+              const label = dataset.legendLabel || dataset.processName || dataset.label;
+              if (seen.has(label)) return [];
+              seen.add(label);
+              const visible = chartInstance.data.datasets
+                .map((item, index) => ({ item, index }))
+                .filter(({ item }) => (item.legendLabel || item.processName || item.label) === label)
+                .some(({ index }) => chartInstance.isDatasetVisible(index));
+              return [{
+                text: label,
+                fillStyle: dataset.borderColor,
+                strokeStyle: dataset.borderColor,
+                hidden: !visible,
+                datasetIndex,
+              }];
+            });
+          },
+        },
+        onClick: (_event, legendItem, legend) => {
+          const chartInstance = legend.chart;
+          const dataset = chartInstance.data.datasets[legendItem.datasetIndex];
+          const label = dataset.legendLabel || dataset.processName || dataset.label;
+          const visible = chartInstance.data.datasets
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) => (item.legendLabel || item.processName || item.label) === label)
+            .some(({ index }) => chartInstance.isDatasetVisible(index));
+          chartInstance.data.datasets.forEach((item, index) => {
+            if ((item.legendLabel || item.processName || item.label) === label) {
+              chartInstance.setDatasetVisibility(index, !visible);
+            }
+          });
+          chartInstance.update();
+        },
+      },
       tooltip: {
+        mode: "nearest",
+        intersect: true,
         callbacks: {
           label: (context) => {
             const metric = context.dataset.metricKey;
