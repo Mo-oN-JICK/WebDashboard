@@ -1482,7 +1482,18 @@ function parseBulkTextLocal() {
   const firstDateIndex = dateColumns[0]?.index ?? 0;
   const dates = dateColumns.map((item) => item.date);
   const rows = dates.map((day) => ({ date: day, totalCount: 0, ngCount: 0, etcCount: 0, clusterCount: 0 }));
-  const keyMap = { "총체결": "totalCount", "총 체결": "totalCount", "NG": "ngCount", "ETC": "etcCount", "Etc": "etcCount", "분류실패": "etcCount", "Cluster": "clusterCount", "Cluster(Upper)": "clusterCount" };
+  const keyMap = {
+    "총체결": "totalCount",
+    "총 체결": "totalCount",
+    "NG": "ngCount",
+    "ETC": "etcCount",
+    "Etc": "etcCount",
+    "분류실패": "etcCount",
+    "Cluster": "clusterCount",
+    "Cluster(Upper)": "clusterUpperCount",
+    "Cluster(Lower(Near))": "clusterLowerNearCount",
+    "Cluster(Lower(Far))": "clusterLowerFarCount",
+  };
   matrix.slice(1).forEach((parts) => {
     const parsed = splitBulkLabelLocal(parts, keyMap);
     const key = keyMap[parsed.label];
@@ -1491,6 +1502,12 @@ function parseBulkTextLocal() {
       const valueIndex = firstDateIndex > 0 ? dateColumns[rowIndex].index : dateColumns[rowIndex].index + parsed.width;
       row[key] = Number(parts[valueIndex] || 0);
     });
+  });
+  rows.forEach((row) => {
+    const hasSplitCluster = ["clusterUpperCount", "clusterLowerNearCount", "clusterLowerFarCount"].some((key) => Object.prototype.hasOwnProperty.call(row, key));
+    if (hasSplitCluster) {
+      row.clusterCount = Number(row.clusterUpperCount || 0) + Number(row.clusterLowerNearCount || 0) + Number(row.clusterLowerFarCount || 0);
+    }
   });
   return rows;
 }

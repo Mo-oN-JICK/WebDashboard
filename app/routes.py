@@ -518,10 +518,11 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
             value_index = date_index if first_date_index > 0 else date_index + label_width
             rows[row_index][field] = parts[value_index] if value_index < len(parts) else ""
     for row in rows:
+        has_split_cluster = any(key in row for key in ["clusterUpperCount", "clusterLowerNearCount", "clusterLowerFarCount"])
         upper = to_int(row.get("clusterUpperCount", 0), "Cluster(Upper)")
         near = to_int(row.get("clusterLowerNearCount", 0), "Cluster(Lower(Near))")
         far = to_int(row.get("clusterLowerFarCount", 0), "Cluster(Lower(Far))")
-        row["clusterCount"] = row.get("clusterCount") or upper + near + far
+        row["clusterCount"] = upper + near + far if has_split_cluster else row.get("clusterCount", 0)
         row.setdefault("totalCount", 0)
         row.setdefault("ngCount", 0)
         row.setdefault("etcCount", 0)
