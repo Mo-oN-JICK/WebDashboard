@@ -1401,6 +1401,7 @@ function renderGroupedProcessTrend(rows) {
                 text: label,
                 fillStyle: dataset.borderColor,
                 strokeStyle: dataset.borderColor,
+                fontColor: getComputedStyle(document.body).getPropertyValue("--text"),
                 hidden: !visible,
                 datasetIndex,
               }];
