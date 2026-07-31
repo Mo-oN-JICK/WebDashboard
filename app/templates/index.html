@@ -19,10 +19,6 @@
     <main>
       <header class="topbar">
         <div class="topbar-main">
-          <div>
-            <p class="eyebrow" id="pageEyebrow">종합 대시보드</p>
-            <div class="title-row"><h2 id="pageTitle">날짜별 생산·품질 현황</h2><div id="alertButtons" class="alert-buttons"><button id="noticeButton" class="ghost" type="button" disabled>알림 0</button><button id="warningButton" class="ghost" type="button" disabled>경고 0</button></div></div>
-          </div>
           <nav class="top-tabs" aria-label="주 메뉴">
             <button data-view="dashboard" class="active">종합 대시보드</button>
             <button data-view="browse">데이터 조회</button>
@@ -33,6 +29,10 @@
             <button data-view="audit">변경 이력</button>
             <button data-view="settings">설정</button>
           </nav>
+          <div>
+            <p class="eyebrow" id="pageEyebrow">종합 대시보드</p>
+            <div class="title-row"><h2 id="pageTitle">날짜별 생산·품질 현황</h2><div id="alertButtons" class="alert-buttons"><button id="noticeButton" class="ghost" type="button" disabled>알림 0</button><button id="warningButton" class="ghost" type="button" disabled>경고 0</button></div></div>
+          </div>
         </div>
         <div class="topmeta">
           <span>최종 기준일 <b>{{ last_date }}</b></span>
@@ -70,7 +70,6 @@
             <label class="check-option"><input type="checkbox" value="clusterCount" checked>Cluster</label>
           </div>
         </details>
-        <label class="filter-toggle"><input id="processComparePercent" type="checkbox">%로 보기</label>
         <button id="resetFilters" class="ghost">초기화</button>
       </section>
 
@@ -86,11 +85,11 @@
           <div class="chart-box trend-box"><canvas id="trendChart"></canvas></div>
         </article>
         <article class="panel">
-          <div class="panel-head"><h3 id="processNgEtcTitle">선택 범위 공정별 NG/Etc</h3></div>
+          <div class="panel-head"><h3 id="processNgEtcTitle">선택 범위 공정별 NG/Etc</h3><label class="filter-toggle"><input id="processComparePercent" type="checkbox">%로 보기</label></div>
           <div class="chart-box process-ng-etc-box"><canvas id="processNgEtcChart"></canvas></div>
         </article>
-        <div class="table-wrap main-table-wrap main-data"><table id="dailyMainTable"></table></div>
         <section id="statusSummary" class="status-summary" aria-label="공정 현황 요약"></section>
+        <div class="table-wrap main-table-wrap main-data"><table id="dailyMainTable"></table></div>
       </section>
 
       <section id="view-browse" class="view">

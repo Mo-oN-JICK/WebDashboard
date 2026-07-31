@@ -697,7 +697,7 @@ function renderProcessNgEtcChart() {
   const asPercent = $("#processComparePercent")?.checked;
   $("#processNgEtcTitle").textContent = `${selectedHierarchyLabel()} NG/Etc ${asPercent ? "비율" : "누적 수량"}`;
   const visibleRows = rows.slice(0, 30);
-  const chartHeight = Math.max(260, visibleRows.length * 34 + 80);
+  const chartHeight = Math.max(320, Math.min(520, visibleRows.length * 18 + 260));
   target.closest(".chart-box").style.height = `${chartHeight}px`;
   chart("#processNgEtcChart", "bar", {
     labels: visibleRows.map((row) => row.processName),
@@ -706,15 +706,14 @@ function renderProcessNgEtcChart() {
       { label: asPercent ? "Etc%" : "Etc", data: visibleRows.map((row) => asPercent ? row.etcRate : row.etcCount), backgroundColor: "#ffcf6e" },
     ],
   }, {
-    indexAxis: "y",
     scales: {
-      x: { stacked: false, ticks: { callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") } },
-      y: { stacked: false },
+      x: { stacked: false, ticks: { maxRotation: 45, minRotation: 0 } },
+      y: { stacked: false, beginAtZero: true, ticks: { callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") } },
     },
     plugins: {
       tooltip: {
         callbacks: {
-          label: (context) => `${context.dataset.label}: ${asPercent ? pct(context.parsed.x) : fmt(context.parsed.x)}`,
+          label: (context) => `${context.dataset.label}: ${asPercent ? pct(context.parsed.y) : fmt(context.parsed.y)}`,
         },
       },
     },
@@ -1494,11 +1493,11 @@ function processFormHtml(row) {
     <label>Line<input name="line" list="processLineList" value="${esc(row.line)}" required></label>
     <label>Process<input name="processName" value="${esc(row.processName)}" required></label>
     <label>현황 기본항목<input name="statusBase" list="processStatusList" value="${esc(status.base)}" placeholder="직접 입력 가능"></label>
+    <div class="wide status-default-box"><strong>기본항목</strong><div>${defaultStatuses.map((item) => `<button type="button" class="status-default-chip" onclick="setProcessStatusBase('${encodeURIComponent(item)}')">${esc(item)}</button>`).join("")}</div></div>
     <label class="wide">현황 코멘트<input name="statusComment" value="${esc(status.comment)}" placeholder="기본항목 뒤에 붙일 코멘트"></label>
     ${datalistHtml("processTypeList", uniqueValues(state.options.processes.map((item) => item.type)))}
     ${datalistHtml("processLineList", uniqueValues(state.options.processes.map((item) => item.line)))}
     ${statusDatalistHtml("processStatusList", uniqueValues([...defaultStatuses, ...(state.options.statuses || []), ...state.options.processes.map((item) => splitProcessStatus(item.status).base)]))}
-    <div class="wide helper">기본 항목: ${defaultStatuses.map(esc).join(" / ")}</div>
   </div>`;
 }
 
@@ -1511,8 +1510,14 @@ function datalistHtml(id, values) {
 }
 
 function statusDatalistHtml(id, values) {
-  return `<datalist id="${id}">${values.map((value) => `<option value="${esc(value)}" label="${defaultStatuses.includes(value) ? "기본 항목" : "사용자 항목"}"></option>`).join("")}</datalist>`;
+  const ordered = [...defaultStatuses, ...values.filter((value) => !defaultStatuses.includes(value))];
+  return `<datalist id="${id}">${ordered.map((value) => `<option value="${esc(value)}" label="${defaultStatuses.includes(value) ? "기본 항목" : "사용자 항목"}"></option>`).join("")}</datalist>`;
 }
+
+window.setProcessStatusBase = (encodedValue) => {
+  const input = $('#modalForm [name="statusBase"]');
+  if (input) input.value = decodeURIComponent(encodedValue);
+};
 
 window.toggleProcess = async (id, isActive) => {
   await api(`/api/processes/${id}`, { method: "PUT", body: JSON.stringify({ isActive }) });
