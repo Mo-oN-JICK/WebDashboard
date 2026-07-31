@@ -54,6 +54,11 @@ function pct(value) {
   return `${Number(value ?? 0).toFixed(2)}%`;
 }
 
+function rateLocal(part, total) {
+  const denominator = Number(total || 0);
+  return denominator ? Number(part || 0) / denominator * 100 : 0;
+}
+
 function isoDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -517,6 +522,7 @@ function bind() {
     chartTrend(state.trends);
     applyFiltersImmediately(false);
   };
+  $("#trendPercentToggle").onchange = () => chartTrend(state.trends);
   $("#processComparePercent").onchange = () => renderProcessNgEtcChart();
   $("#noticeButton").onclick = () => showAlertModal("notice");
   $("#warningButton").onclick = () => showAlertModal("warning");
@@ -623,7 +629,13 @@ function updateTrendTitle() {
   const title = $("#trendTitle");
   if (!title || !state.options) return;
   const selectedProcesses = checkedValues("process");
+  const selectedTypes = checkedValues("type");
+  const selectedLines = checkedValues("line");
   if (selectedProcesses.length === 0) {
+    if (selectedTypes.length || selectedLines.length) {
+      title.innerHTML = `<span class="trend-title-row">${selectedTypes[0] ? `<span class="trend-chip"><small>Type</small>${esc(selectedTypes[0])}</span>` : ""}${selectedLines[0] ? `<span class="trend-chip"><small>Line</small>${esc(selectedLines[0])}</span>` : ""}<span>Process별 날짜 막대 그래프</span></span>`;
+      return;
+    }
     title.textContent = "날짜별 추이 그래프";
     return;
   }
@@ -631,8 +643,6 @@ function updateTrendTitle() {
     title.textContent = `선택 Process ${selectedProcesses.length}개 날짜별 추이 그래프`;
     return;
   }
-  const selectedTypes = checkedValues("type");
-  const selectedLines = checkedValues("line");
   const process = state.options.processes.find((item) => (
     item.processName === selectedProcesses[0]
     && (!selectedTypes.length || selectedTypes.includes(item.type))
@@ -674,7 +684,8 @@ function applyUrl() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadDashboard(), loadRows()]);
+  await loadRows();
+  await loadDashboard();
 }
 
 async function loadDashboard() {
@@ -687,7 +698,10 @@ async function loadDashboard() {
   state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
   renderDailyMain(state.trends);
-  renderProcessNgEtcChart();
+  const groupMode = isProcessGroupTrendMode();
+  $("#processNgEtcPanel")?.classList.toggle("hidden", groupMode);
+  $("#trendPercentToggleWrap")?.classList.toggle("hidden", !groupMode);
+  if (!groupMode) renderProcessNgEtcChart();
   renderStatusSummary();
   updateTrendTitle();
   chartTrend(state.trends);
@@ -1096,7 +1110,137 @@ function positionFilterMenu(details) {
   menu.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - menuHeight - 12))}px`;
 }
 
+function isProcessGroupTrendMode() {
+  return !checkedValues("process").length && (checkedValues("type").length || checkedValues("line").length);
+}
+
+function processColor(index, alpha = 1) {
+  const hue = (index * 47) % 360;
+  return `hsla(${hue}, 74%, 62%, ${alpha})`;
+}
+
+function processTrendValue(row, metric, asPercent) {
+  if (metric === "ngEtcStack") {
+    const ng = Number(row.ngCount || 0);
+    const etc = Number(row.etcCount || 0);
+    return asPercent ? rateLocal(ng + etc, row.totalCount) : ng + etc;
+  }
+  return Number(row[metric] || 0);
+}
+
+function renderGroupedProcessTrend(rows) {
+  const metrics = selectedMetrics();
+  const asPercent = $("#trendPercentToggle")?.checked;
+  const dates = rows.map((row) => row.date);
+  const processNames = [...new Set(filteredProcesses(true).map((row) => row.processName))].sort((a, b) => a.localeCompare(b));
+  const byKey = new Map();
+  state.rows.forEach((row) => {
+    const key = `${row.date}||${row.processName}`;
+    const item = byKey.get(key) || { date: row.date, processName: row.processName, totalCount: 0, ngCount: 0, etcCount: 0, clusterCount: 0 };
+    item.totalCount += Number(row.totalCount || 0);
+    item.ngCount += Number(row.ngCount || 0);
+    item.etcCount += Number(row.etcCount || 0);
+    item.clusterCount += Number(row.clusterCount || 0);
+    item.ngRate = rateLocal(item.ngCount, item.totalCount);
+    item.etcRate = rateLocal(item.etcCount, item.totalCount);
+    byKey.set(key, item);
+  });
+  const datasets = [];
+  const selected = (metrics.length ? metrics : ["ngEtcStack"])
+    .filter((metric) => !(metrics.includes("ngEtcStack") && ["ngCount", "etcCount"].includes(metric)));
+  selected.forEach((metric, metricIndex) => {
+    if (metric === "ngEtcStack") {
+      processNames.forEach((processName, processIndex) => {
+        datasets.push(
+          {
+            type: "bar",
+            label: `${processName} / NG`,
+            metricKey: "ngCount",
+            sourceMetric: "ngEtcStack",
+            processName,
+            data: dates.map((date) => {
+              const row = byKey.get(`${date}||${processName}`) || {};
+              return asPercent ? Number(row.ngRate || 0) : Number(row.ngCount || 0);
+            }),
+            backgroundColor: processColor(processIndex, 0.78),
+            borderColor: processColor(processIndex, 1),
+            borderWidth: 1,
+            stack: processName,
+          },
+          {
+            type: "bar",
+            label: `${processName} / 분류실패`,
+            metricKey: "etcCount",
+            sourceMetric: "ngEtcStack",
+            processName,
+            data: dates.map((date) => {
+              const row = byKey.get(`${date}||${processName}`) || {};
+              return asPercent ? Number(row.etcRate || 0) : Number(row.etcCount || 0);
+            }),
+            backgroundColor: processColor(processIndex, 0.38),
+            borderColor: processColor(processIndex, 1),
+            borderWidth: 1,
+            stack: processName,
+          },
+        );
+      });
+      return;
+    }
+    processNames.forEach((processName, processIndex) => {
+      datasets.push({
+        type: "bar",
+        label: selected.length === 1 ? processName : `${processName} / ${metricLabels[metric]}`,
+        metricKey: metric,
+        sourceMetric: metric,
+        processName,
+        data: dates.map((date) => processTrendValue(byKey.get(`${date}||${processName}`) || {}, metric, asPercent)),
+        backgroundColor: processColor(processIndex, selected.length === 1 ? 0.78 : Math.max(0.38, 0.78 - metricIndex * 0.12)),
+        borderColor: processColor(processIndex, 1),
+        borderWidth: 1,
+        stack: metric,
+      });
+    });
+  });
+  const maxRows = Math.max(1, dates.length);
+  $("#trendChart").closest(".chart-box").style.height = `${Math.max(360, Math.min(720, maxRows * 42 + 180))}px`;
+  const trendChart = chart("#trendChart", "bar", {
+    labels: dates,
+    datasets,
+  }, {
+    indexAxis: "y",
+    plugins: {
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            const metric = context.dataset.metricKey;
+            const sourceMetric = context.dataset.sourceMetric || metric;
+            const value = context.parsed.x;
+            const suffix = sourceMetric === "ngEtcStack" && asPercent ? "%" : metric?.includes("Rate") ? "%" : "";
+            const formatted = suffix ? pct(value) : fmt(value);
+            return `${context.dataset.processName} / ${metricLabels[metric]}: ${formatted}`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        stacked: true,
+        beginAtZero: true,
+        ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
+        grid: { color: "rgba(148,163,184,.16)" },
+      },
+      y: { stacked: true, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
+    },
+  });
+  bindTrendDateClick(trendChart);
+}
+
 function chartTrend(rows) {
+  if (isProcessGroupTrendMode()) {
+    renderGroupedProcessTrend(rows);
+    return;
+  }
+  $("#trendChart").closest(".chart-box").style.height = "";
   const metrics = selectedMetrics();
   const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
   const noteMap = Object.fromEntries(rows.filter((row) => String(row.note || "").trim()).map((row) => [row.date, String(row.note).trim()]));
@@ -1245,15 +1389,16 @@ function bindTrendDateClick(chartInstance) {
 }
 
 function nearestTrendDate(chartInstance, event, maxDistance = 42, predicate = null) {
-  const xScale = chartInstance.scales.x;
-  if (!xScale) return null;
+  const horizontal = chartInstance.options.indexAxis === "y";
+  const scale = horizontal ? chartInstance.scales.y : chartInstance.scales.x;
+  if (!scale) return null;
   const rect = chartInstance.canvas.getBoundingClientRect();
-  const offsetX = event.clientX - rect.left;
+  const offset = horizontal ? event.clientY - rect.top : event.clientX - rect.left;
   let nearest = null;
   let nearestDistance = Infinity;
   chartInstance.data.labels.forEach((date, index) => {
     if (predicate && !predicate(date)) return;
-    const distance = Math.abs(offsetX - xScale.getPixelForValue(index));
+    const distance = Math.abs(offset - scale.getPixelForValue(index));
     if (distance < nearestDistance) {
       nearest = date;
       nearestDistance = distance;

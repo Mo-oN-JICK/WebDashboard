@@ -78,13 +78,14 @@
           <div class="panel-head">
             <h3 id="trendTitle">날짜별 추이 그래프</h3>
             <div class="panel-actions">
+              <label id="trendPercentToggleWrap" class="filter-toggle hidden"><input id="trendPercentToggle" type="checkbox">%로 보기</label>
               <button id="exportXlsxMain" class="ghost">Excel 내보내기</button>
               <button id="saveTrendPng" class="ghost">PNG 저장</button>
             </div>
           </div>
           <div class="chart-box trend-box"><canvas id="trendChart"></canvas></div>
         </article>
-        <article class="panel">
+        <article id="processNgEtcPanel" class="panel">
           <div class="panel-head"><h3 id="processNgEtcTitle">선택 범위 공정별 NG/분류실패</h3><label class="filter-toggle"><input id="processComparePercent" type="checkbox">%로 보기</label></div>
           <div class="chart-box process-ng-etc-box"><canvas id="processNgEtcChart"></canvas></div>
         </article>
