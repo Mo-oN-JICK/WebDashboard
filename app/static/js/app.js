@@ -170,6 +170,17 @@ function isDataDate(value) {
   return dataDateSet().has(value);
 }
 
+function dataDateBounds() {
+  const dates = [...dataDateSet()].sort();
+  return { min: dates[0] || "", max: dates[dates.length - 1] || "" };
+}
+
+function isSelectableCalendarDate(value) {
+  const { min, max } = dataDateBounds();
+  if (!min || !max) return true;
+  return value >= min && value <= max;
+}
+
 function datesBetween(start, end) {
   if (!start || !end) return [];
   const result = [];
@@ -261,9 +272,10 @@ function renderDateRangePicker() {
     const value = isoDate(day);
     const inMonth = day.getMonth() === month;
     const hasData = isDataDate(value);
+    const selectable = isSelectableCalendarDate(value);
     const inRange = selectedStart && selectedEnd && value >= selectedStart && value <= selectedEnd;
     const isEdge = value === selectedStart || value === selectedEnd;
-    return `<button type="button" class="${inMonth ? "" : "muted-day"} ${hasData ? "" : "disabled-day"} ${inRange ? "in-range" : ""} ${isEdge ? "range-edge" : ""}" data-date="${value}" ${hasData ? "" : "disabled"}>${day.getDate()}</button>`;
+    return `<button type="button" class="${inMonth ? "" : "muted-day"} ${hasData ? "data-day" : ""} ${selectable ? "" : "disabled-day"} ${inRange ? "in-range" : ""} ${isEdge ? "range-edge" : ""}" data-date="${value}" ${selectable ? "" : "disabled"}>${day.getDate()}</button>`;
   }).join("");
   target.innerHTML = `
     <div class="date-picker-head">
@@ -285,7 +297,7 @@ function shiftDatePickerMonth(step) {
 }
 
 function chooseRangeDate(value) {
-  if (!isDataDate(value)) return;
+  if (!isSelectableCalendarDate(value)) return;
   if (!state.pendingRangeStart || ($("#start").value && $("#end").value)) {
     state.pendingRangeStart = value;
     $("#quickRange").value = "custom";
@@ -678,7 +690,7 @@ async function loadDashboard() {
   renderProcessNgEtcChart();
   renderStatusSummary();
   updateTrendTitle();
-  chartTrend(trends);
+  chartTrend(state.trends);
   renderAlertButtons();
   if (state.rows.length) renderDataTable();
 }
@@ -1094,11 +1106,13 @@ function chartTrend(rows) {
     chartTooltipMap[date] ??= "분류실패% 연속 초과, 비고 공란";
   });
   const hasNgEtcStack = metrics.includes("ngEtcStack");
-  const lineCountMetrics = metrics.filter((metric) => metric !== "ngEtcStack" && !metric.includes("Rate"));
+  const lineCountMetrics = metrics.filter((metric) => metric !== "ngEtcStack" && metric !== "totalCount" && !metric.includes("Rate"));
   const stackedMax = hasNgEtcStack ? Math.max(...rows.map((row) => Number(row.ngCount || 0) + Number(row.etcCount || 0)), 0) : 0;
   const lineCountMax = lineCountMetrics.length ? Math.max(...rows.flatMap((row) => lineCountMetrics.map((metric) => Number(row[metric] || 0))), 0) : 0;
+  const totalMax = metrics.includes("totalCount") ? Math.max(...rows.map((row) => Number(row.totalCount || 0)), 0) : 0;
   const countMax = Math.max(stackedMax, lineCountMax);
   const countScale = countMax > 0 ? { suggestedMax: Math.ceil(countMax * 1.12) } : {};
+  const totalScale = totalMax > 0 ? { suggestedMax: Math.ceil(totalMax * 1.08) } : {};
   const colors = {
     totalCount: "#5b8cff",
     ngCount: "#ff5d5d",
@@ -1146,7 +1160,7 @@ function chartTrend(rows) {
       backgroundColor: colors[metric],
       tension: 0.25,
       spanGaps: false,
-      yAxisID: metric.includes("Rate") ? "pct" : "count",
+      yAxisID: metric.includes("Rate") ? "pct" : metric === "totalCount" ? "total" : "count",
       order: 1,
     });
   });
@@ -1188,6 +1202,7 @@ function chartTrend(rows) {
     scales: {
       count: { position: "left", stacked: false, ...countScale, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
       stackCount: { position: "left", display: false, stacked: true, ...countScale, grid: { display: false } },
+      total: { position: "right", display: metrics.includes("totalCount"), ...totalScale, ticks: { color: "#5b8cff" }, grid: { drawOnChartArea: false } },
       pct: { position: "right", ticks: { color: "#a8b3c7", callback: (value) => value + "%" }, grid: { drawOnChartArea: false } },
       x: { stacked: false, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },

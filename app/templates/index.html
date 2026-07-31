@@ -59,15 +59,15 @@
         </select>
         <div id="hiddenProcessFilters" hidden><div id="typeOptions"></div><div id="lineOptions"></div><div id="processOptions"></div><span id="typeCount"></span><span id="lineCount"></span><span id="processCount"></span></div>
         <details class="filter-menu metric-filter-menu" data-filter="metric">
-          <summary>그래프 항목 <b id="metricCount">6개</b></summary>
+          <summary>그래프 항목 <b id="metricCount">3개</b></summary>
           <div id="metricFilter" class="menu-options metric-options" aria-label="그래프 구분">
-            <label class="check-option"><input type="checkbox" value="totalCount" checked>총체결</label>
+            <label class="check-option"><input type="checkbox" value="totalCount">총체결</label>
             <label class="check-option"><input type="checkbox" value="ngCount" checked>NG</label>
-            <label class="check-option"><input type="checkbox" value="ngRate" checked>NG%</label>
+            <label class="check-option"><input type="checkbox" value="ngRate">NG%</label>
             <label class="check-option"><input type="checkbox" value="etcCount" checked>분류실패</label>
-            <label class="check-option"><input type="checkbox" value="etcRate" checked>분류실패%</label>
-            <label class="check-option"><input type="checkbox" value="ngEtcStack">NG+분류실패</label>
-            <label class="check-option"><input type="checkbox" value="clusterCount" checked>Cluster</label>
+            <label class="check-option"><input type="checkbox" value="etcRate">분류실패%</label>
+            <label class="check-option"><input type="checkbox" value="ngEtcStack" checked>NG+분류실패</label>
+            <label class="check-option"><input type="checkbox" value="clusterCount">Cluster</label>
           </div>
         </details>
         <button id="resetFilters" class="ghost">초기화</button>
