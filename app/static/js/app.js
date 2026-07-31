@@ -825,29 +825,57 @@ function robotIcon() {
   </svg>`;
 }
 
-function renderSummaryCards() {
-  const target = $("#summaryCards");
-  if (!target || !state.options?.processes) return;
-  const active = state.options.processes.filter((process) => process.isActive);
-  const selectedType = checkedValues("type")[0] || "";
-  const currentProcesses = filteredProcesses(true);
-  const targetProcesses = selectedType ? active.filter((process) => process.type === selectedType) : active;
-  const current = currentProcesses.length;
-  const goal = Math.max(targetProcesses.length, 0);
-  const ratio = goal ? current / goal * 100 : 0;
-  const selected = selectedSummaryName();
-  const weeks = lastFiveWeeks();
-  const weekValues = weeks.map((week) => {
+function smileIcon() {
+  return `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M9 10h.01M15 10h.01M8.5 14c1.8 2 5.2 2 7 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function bellAlertIcon() {
+  return `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M7 10a5 5 0 0 1 10 0v4l2 2H5l2-2v-4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M10 19a2 2 0 0 0 4 0M19 5v4M19 12h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function warningTriangleIcon() {
+  return `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--bad)">
+    <path d="M12 4 21 20H3L12 4Z" fill="rgba(255,107,107,.22)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M12 9v5M12 17h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function processKey(process) {
+  return `${process.type}||${process.line}||${process.processName}`;
+}
+
+function rowProcessKey(row) {
+  return `${row.type}||${row.line}||${row.processName}`;
+}
+
+function alertProcessKey(alert) {
+  return `${alert.type}||${alert.line}||${alert.processName}`;
+}
+
+function weeklyProcessCounts(weeks, processKeySet) {
+  return weeks.map((week) => {
     const next = new Date(`${week}T00:00:00`);
     next.setDate(next.getDate() + 7);
     const end = isoDate(next);
-    return new Set(state.rows.filter((row) => row.date >= week && row.date < end).map((row) => row.processId)).size;
+    return new Set(state.rows
+      .filter((row) => row.date >= week && row.date < end && processKeySet.has(rowProcessKey(row)))
+      .map((row) => row.processId)).size;
   });
-  target.innerHTML = `
+}
+
+function summaryCard({ title, icon, current, goal, values }) {
+  const ratio = goal ? current / goal * 100 : 0;
+  return `
     <article class="summary-card">
       <div class="summary-card-top">
-        <h4 class="summary-card-title">${esc(selected.name)} ${esc(selected.level)} 공정 수</h4>
-        <span class="summary-icon">${robotIcon()}</span>
+        <h4 class="summary-card-title">${esc(title)}</h4>
+        <span class="summary-icon">${icon}</span>
       </div>
       <div class="summary-card-main">
         <strong class="summary-current">${fmt(current)}</strong>
@@ -855,10 +883,57 @@ function renderSummaryCards() {
       </div>
       <div class="summary-card-bottom">
         <div class="summary-sub">${pct(ratio)}</div>
-        ${summarySparkline(weekValues)}
+        ${summarySparkline(values)}
       </div>
     </article>
   `;
+}
+
+function renderSummaryCards() {
+  const target = $("#summaryCards");
+  if (!target || !state.options?.processes) return;
+  const active = state.options.processes.filter((process) => process.isActive);
+  const selectedType = checkedValues("type")[0] || "";
+  const currentProcesses = filteredProcesses(true);
+  const targetProcesses = selectedType ? active.filter((process) => process.type === selectedType) : active;
+  const currentProcessKeys = new Set(currentProcesses.map(processKey));
+  const stableProcesses = currentProcesses.filter((process) => statusBase(process.status) === "판정 안정");
+  const stableProcessKeys = new Set(stableProcesses.map(processKey));
+  const noticeProcessKeys = new Set(state.alerts.filter((alert) => alert.level === "notice" && currentProcessKeys.has(alertProcessKey(alert))).map(alertProcessKey));
+  const warningProcessKeys = new Set(state.alerts.filter((alert) => alert.level !== "notice" && currentProcessKeys.has(alertProcessKey(alert))).map(alertProcessKey));
+  const selected = selectedSummaryName();
+  const weeks = lastFiveWeeks();
+  const totalGoal = currentProcesses.length;
+  target.innerHTML = [
+    summaryCard({
+      title: `${selected.name} ${selected.level} 공정 수`,
+      icon: robotIcon(),
+      current: currentProcesses.length,
+      goal: Math.max(targetProcesses.length, 0),
+      values: weeklyProcessCounts(weeks, currentProcessKeys),
+    }),
+    summaryCard({
+      title: `${selected.name} ${selected.level} 안정화 합계`,
+      icon: smileIcon(),
+      current: stableProcesses.length,
+      goal: totalGoal,
+      values: weeklyProcessCounts(weeks, stableProcessKeys),
+    }),
+    summaryCard({
+      title: `${selected.name} ${selected.level} 알림 공정 수`,
+      icon: bellAlertIcon(),
+      current: noticeProcessKeys.size,
+      goal: totalGoal,
+      values: weeklyProcessCounts(weeks, noticeProcessKeys),
+    }),
+    summaryCard({
+      title: `${selected.name} ${selected.level} 경고 공정 수`,
+      icon: warningTriangleIcon(),
+      current: warningProcessKeys.size,
+      goal: totalGoal,
+      values: weeklyProcessCounts(weeks, warningProcessKeys),
+    }),
+  ].join("");
 }
 
 function selectedHierarchyLabel() {
