@@ -24,7 +24,6 @@
             <button data-view="browse">데이터 조회</button>
             <button data-view="entry">데이터 입력</button>
             <button data-view="processes">공정 관리</button>
-            <button data-view="import">데이터 가져오기</button>
             <button data-view="users">사용자 관리</button>
             <button data-view="audit">변경 이력</button>
             <button data-view="settings">설정</button>
@@ -47,10 +46,11 @@
         <input type="date" id="start" hidden aria-label="조회 시작일">
         <input type="date" id="end" hidden aria-label="조회 종료일">
         <details class="filter-menu date-range-menu" data-filter="dateRange">
-          <summary>기간 <b id="dateRangeLabel">선택</b></summary>
+          <summary>기간 <b id="dateRangeLabel">선택</b><span class="calendar-icon" aria-hidden="true"></span></summary>
           <div class="menu-options date-picker" id="dateRangePicker"></div>
         </details>
         <select id="quickRange" aria-label="빠른 기간">
+          <option value="custom">사용자 지정</option>
           <option value="today">Today</option>
           <option value="7" selected>1주</option>
           <option value="14">2주</option>
@@ -64,9 +64,9 @@
             <label class="check-option"><input type="checkbox" value="totalCount" checked>총체결</label>
             <label class="check-option"><input type="checkbox" value="ngCount" checked>NG</label>
             <label class="check-option"><input type="checkbox" value="ngRate" checked>NG%</label>
-            <label class="check-option"><input type="checkbox" value="etcCount" checked>Etc</label>
-            <label class="check-option"><input type="checkbox" value="etcRate" checked>Etc%</label>
-            <label class="check-option"><input type="checkbox" value="ngEtcStack">NG+Etc</label>
+            <label class="check-option"><input type="checkbox" value="etcCount" checked>분류실패</label>
+            <label class="check-option"><input type="checkbox" value="etcRate" checked>분류실패%</label>
+            <label class="check-option"><input type="checkbox" value="ngEtcStack">NG+분류실패</label>
             <label class="check-option"><input type="checkbox" value="clusterCount" checked>Cluster</label>
           </div>
         </details>
@@ -85,7 +85,7 @@
           <div class="chart-box trend-box"><canvas id="trendChart"></canvas></div>
         </article>
         <article class="panel">
-          <div class="panel-head"><h3 id="processNgEtcTitle">선택 범위 공정별 NG/Etc</h3><label class="filter-toggle"><input id="processComparePercent" type="checkbox">%로 보기</label></div>
+          <div class="panel-head"><h3 id="processNgEtcTitle">선택 범위 공정별 NG/분류실패</h3><label class="filter-toggle"><input id="processComparePercent" type="checkbox">%로 보기</label></div>
           <div class="chart-box process-ng-etc-box"><canvas id="processNgEtcChart"></canvas></div>
         </article>
         <section id="statusSummary" class="status-summary" aria-label="공정 현황 요약"></section>
@@ -120,17 +120,17 @@
               <div class="field-with-action"><label>공정<select name="processId" required></select></label><button id="addProcessFromEntry" class="ghost admin-only" type="button">공정 추가</button></div>
               <label>총체결<input name="totalCount" type="number" min="0" required></label>
               <label>NG<input name="ngCount" type="number" min="0" required></label>
-              <label>Etc<input name="etcCount" type="number" min="0" required></label>
+              <label>분류실패<input name="etcCount" type="number" min="0" required></label>
               <label>Cluster<input name="clusterCount" type="number" min="0" required></label>
               <label class="wide">비고<textarea name="note" rows="4"></textarea></label>
-              <div class="wide helper">NG율 <b id="ngPreview">0.00%</b> · Etc% <b id="etcPreview">0.00%</b></div>
+              <div class="wide helper">NG율 <b id="ngPreview">0.00%</b> · 분류실패% <b id="etcPreview">0.00%</b></div>
               <button class="primary admin-only" type="submit">저장</button>
             </form>
           </article>
           <article class="panel">
             <h3>텍스트 대량 입력</h3>
             <label>공정<select id="bulkTextProcess"></select></label>
-            <label class="wide">붙여넣기 데이터<textarea id="bulkText" rows="14" spellcheck="false" placeholder="&#9;2026-07-20&#9;2026-07-21&#10;총체결&#9;1013&#9;5580&#10;NG&#9;15&#9;28&#10;진성&#9;0&#9;0&#10;미검&#9;0&#9;0&#10;과검&#9;0&#9;0&#10;Cluster(Upper)&#9;115&#9;115&#10;Cluster(Lower(Near))&#9;0&#9;0&#10;Cluster(Lower(Far))&#9;0&#9;0&#10;Class&#9;0&#9;0&#10;ETC&#9;0&#9;2"></textarea></label>
+            <label class="wide">붙여넣기 데이터<textarea id="bulkText" rows="14" spellcheck="false" placeholder="&#9;2026-07-20&#9;2026-07-21&#10;총체결&#9;1013&#9;5580&#10;NG&#9;15&#9;28&#10;진성&#9;0&#9;0&#10;미검&#9;0&#9;0&#10;과검&#9;0&#9;0&#10;Cluster(Upper)&#9;115&#9;115&#10;Cluster(Lower(Near))&#9;0&#9;0&#10;Cluster(Lower(Far))&#9;0&#9;0&#10;Class&#9;0&#9;0&#10;분류실패&#9;0&#9;2"></textarea></label>
             <div class="toolbar"><button id="previewBulkText" class="ghost">미리보기</button><button id="saveBulkText" class="primary admin-only">대량 저장</button></div>
             <div class="table-wrap"><table id="bulkTextPreview"></table></div>
           </article>
@@ -152,8 +152,8 @@
       <section id="view-settings" class="view">
         <article class="panel"><h3>설정</h3><form id="settingsForm" class="settings-grid">
           <section class="settings-card"><h4>알림 설정</h4><label>데이터 미입력 경고 기준(일)<input name="missing_data_days_threshold" type="number" min="0" step="1"></label></section>
-          <section class="settings-card"><h4>경고 설정</h4><label>n연속 Etc 0.5% 이상<input name="etc_consecutive_threshold_count" type="number" min="1" step="1"></label><label>하루 Etc% 증가 경고 기준(%)<input name="etc_daily_increase_threshold" type="number" min="0" step="0.01"></label></section>
-          <section class="settings-card"><h4>데이터 경고 설정</h4><label>NG율 경고 기준(%)<input name="ng_rate_threshold" type="number" step="0.01"></label><label>Etc% 경고 기준(%)<input name="etc_rate_threshold" type="number" step="0.01"></label><label>전일 대비 NG 증가 기준(%)<input name="ng_increase_threshold" type="number" step="1"></label><label>총체결 감소 기준(%)<input name="total_drop_threshold" type="number" step="1"></label></section>
+          <section class="settings-card"><h4>경고 설정</h4><label>n연속 분류실패 0.5% 이상<input name="etc_consecutive_threshold_count" type="number" min="1" step="1"></label><label>하루 분류실패% 증가 경고 기준(%)<input name="etc_daily_increase_threshold" type="number" min="0" step="0.01"></label></section>
+          <section class="settings-card"><h4>데이터 경고 설정</h4><label>NG율 경고 기준(%)<input name="ng_rate_threshold" type="number" step="0.01"></label><label>분류실패% 경고 기준(%)<input name="etc_rate_threshold" type="number" step="0.01"></label><label>전일 대비 NG 증가 기준(%)<input name="ng_increase_threshold" type="number" step="1"></label><label>총체결 감소 기준(%)<input name="total_drop_threshold" type="number" step="1"></label></section>
           <div class="settings-actions"><button class="primary admin-only" type="submit">설정 저장</button></div>
         </form></article>
       </section>

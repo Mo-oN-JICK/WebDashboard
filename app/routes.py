@@ -103,6 +103,10 @@ def options():
             ],
             "statuses": [s.name for s in StatusOption.query.filter_by(isActive=True).order_by(StatusOption.name).all()],
             "noteTemplates": [n.text for n in NoteTemplate.query.order_by(NoteTemplate.text).all()],
+            "dataDates": [
+                row[0].isoformat()
+                for row in db.session.query(DailyMeasurement.measurementDate).distinct().order_by(DailyMeasurement.measurementDate).all()
+            ],
             "settings": {s.key: s.value for s in AppSetting.query.all()},
         }
     )
@@ -160,7 +164,7 @@ def etc_consecutive_alerts(args) -> list[dict]:
                 "id": f"etc_streak:{first.processId}:{consecutive_count}:{','.join(item.measurementDate.isoformat() for item in recent_rows)}",
                 "alertType": "etc_streak",
                 "level": "warning",
-                "title": f"Etc% {threshold}% 이상 {consecutive_count}회 연속",
+                "title": f"분류실패% {threshold}% 이상 {consecutive_count}회 연속",
                 "processId": first.processId,
                 "type": first.process.type,
                 "line": first.process.line,
@@ -197,7 +201,7 @@ def etc_daily_increase_alerts(args) -> list[dict]:
                     "id": f"etc_spike:{row.processId}:{previous.measurementDate.isoformat()}:{row.measurementDate.isoformat()}:{threshold}",
                     "alertType": "etc_spike",
                     "level": "warning",
-                    "title": f"Etc% 하루 증가 +{threshold}% 이상",
+                    "title": f"분류실패% 하루 증가 +{threshold}% 이상",
                     "processId": row.processId,
                     "type": row.process.type,
                     "line": row.process.line,
@@ -343,7 +347,7 @@ def create_measurement():
     data = request.json or {}
     total = to_int(data.get("totalCount"), "총체결")
     ng = to_int(data.get("ngCount"), "NG")
-    etc = to_int(data.get("etcCount"), "Etc")
+    etc = to_int(data.get("etcCount"), "분류실패")
     validate_measurement(total, ng, etc)
     proc = ProcessMaster.query.get_or_404(data.get("processId"))
     measurement_date = date.fromisoformat(data["measurementDate"])
@@ -382,7 +386,7 @@ def update_measurement(item_id: int):
     data = request.json or {}
     total = to_int(data.get("totalCount", item.totalCount), "총체결")
     ng = to_int(data.get("ngCount", item.ngCount), "NG")
-    etc = to_int(data.get("etcCount", item.etcCount), "Etc")
+    etc = to_int(data.get("etcCount", item.etcCount), "분류실패")
     validate_measurement(total, ng, etc)
     item.totalCount = total
     item.ngCount = ng
@@ -441,7 +445,7 @@ def save_bulk_rows(rows: list[dict]) -> dict:
                 raise ValueError("공정이 없습니다")
             total = to_int(row.get("totalCount"), "총체결")
             ng = to_int(row.get("ngCount"), "NG")
-            etc = to_int(row.get("etcCount"), "Etc")
+            etc = to_int(row.get("etcCount"), "분류실패")
             validate_measurement(total, ng, etc)
             measurement_date = date.fromisoformat(row["measurementDate"])
             item = DailyMeasurement.query.filter_by(processId=proc.id, measurementDate=measurement_date).first()
@@ -502,6 +506,7 @@ def parse_bulk_text(text: str, process_id: int) -> list[dict]:
         "Class": "classCount",
         "ETC": "etcCount",
         "Etc": "etcCount",
+        "분류실패": "etcCount",
         "비고": "note",
     }
     for parts in matrix[1:]:

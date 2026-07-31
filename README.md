@@ -8,7 +8,7 @@ Excel 형태의 생산·품질 데이터를 웹에서 등록, 수정, 조회, �
 - 공정 마스터 관리, 활성/비활성 처리
 - 날짜별 측정 데이터 등록, 수정, 삭제
 - 텍스트 기반 대량 입력
-- NG율, Etc율 자동 계산
+- NG율, 분류실패율 자동 계산
 - 동일 공정·동일 날짜 중복 등록 방지
 - 날짜, Line, Type, Process, 현황, 구분 필터
 - 날짜별 추이 그래프와 PNG 저장
@@ -183,16 +183,16 @@ Cluster(Upper)	115	115
 Cluster(Lower(Near))	0	0
 Cluster(Lower(Far))	0	0
 Class	0	0
-ETC	0	2
+분류실패	0	2
 ```
 
-`진성`, `미검`, `과검`, `Cluster(Upper)`, `Cluster(Lower(Near))`, `Cluster(Lower(Far))`, `Class`는 추후 활용을 위해 DB에 저장됩니다. 현재 메인 대시보드는 `날짜`, `총체결`, `NG`, `Etc`, `Etc%`, `Cluster`, `비고` 중심으로 표시합니다.
+`진성`, `미검`, `과검`, `Cluster(Upper)`, `Cluster(Lower(Near))`, `Cluster(Lower(Far))`, `Class`는 추후 활용을 위해 DB에 저장됩니다. 현재 메인 대시보드는 `날짜`, `총체결`, `NG`, `분류실패`, `분류실패%`, `Cluster`, `비고` 중심으로 표시합니다. 기존 Excel 호환을 위해 `ETC`, `Etc`도 입력값으로 인식합니다.
 
 ## Excel/CSV 가져오기 형식
 
 Long Format:
 
-| 날짜 | Line | Type | Process | 총체결 | NG | Etc | Cluster | 비고 |
+| 날짜 | Line | Type | Process | 총체결 | NG | 분류실패 | Cluster | 비고 |
 |---|---|---|---|---:|---:|---:|---:|---|
 
 Wide Format:
@@ -200,7 +200,7 @@ Wide Format:
 | Line | Type | Process | 현황 | 구분 | 2026-07-20 | 2026-07-21 |
 |---|---|---|---|---|---:|---:|
 
-Wide Format의 `구분`은 `총체결`, `NG`, `Etc`, `Etc%`, `Cluster`, `비고`를 지원합니다. 비율 항목은 저장하지 않고 서버에서 자동 계산합니다.
+Wide Format의 `구분`은 `총체결`, `NG`, `분류실패`, `분류실패%`, `Cluster`, `비고`를 지원합니다. 비율 항목은 저장하지 않고 서버에서 자동 계산합니다. 기존 파일 호환을 위해 `Etc`, `Etc%`도 인식합니다.
 
 ## 테스트
 
@@ -210,7 +210,7 @@ pytest
 
 테스트 범위:
 
-- NG율, Etc율 계산
+- NG율, 분류실패율 계산
 - 총체결 0인 경우 비율 0 처리
 - 중복 등록 방지
 - 조회자 수정 차단

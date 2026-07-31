@@ -11,7 +11,7 @@ from openpyxl import Workbook, load_workbook
 from . import db
 from .models import AuditLog, DailyMeasurement, ProcessMaster
 
-METRICS = ["총체결", "NG", "NG율", "Etc", "Etc율", "Cluster"]
+METRICS = ["총체결", "NG", "NG율", "분류실패", "분류실패율", "Cluster"]
 
 
 def parse_date(value: Any) -> date:
@@ -46,7 +46,7 @@ def validate_measurement(total: int, ng: int, etc: int) -> None:
     if ng > total:
         raise ValueError("NG는 총체결보다 클 수 없습니다")
     if etc > total:
-        raise ValueError("Etc는 총체결보다 클 수 없습니다")
+        raise ValueError("분류실패는 총체결보다 클 수 없습니다")
 
 
 def rate(part: int, total: int) -> float:
@@ -232,7 +232,7 @@ def normalize_import(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "measurementDate": r.get("날짜", ""),
                 "totalCount": r.get("총체결", 0),
                 "ngCount": r.get("NG", 0),
-                "etcCount": r.get("Etc", 0),
+                "etcCount": r.get("분류실패", r.get("Etc", 0)),
                 "clusterCount": r.get("Cluster", 0),
                 "note": "" if r.get("비고", "") is None else str(r.get("비고", "")),
             }
@@ -243,7 +243,7 @@ def normalize_import(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "measurementDate": parse_date(base_row["measurementDate"]),
                         "totalCount": to_int(base_row["totalCount"], "총체결"),
                         "ngCount": to_int(base_row["ngCount"], "NG"),
-                        "etcCount": to_int(base_row["etcCount"], "Etc"),
+                        "etcCount": to_int(base_row["etcCount"], "분류실패"),
                         "clusterCount": to_int(base_row["clusterCount"], "Cluster"),
                     }
                 )
@@ -283,9 +283,9 @@ def normalize_import(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 item["totalCount"] = to_int(val, "총체결")
             elif label == "NG":
                 item["ngCount"] = to_int(val, "NG")
-            elif label in ["Etc", "Etc%"]:
-                if label == "Etc":
-                    item["etcCount"] = to_int(val, "Etc")
+            elif label in ["Etc", "Etc%", "분류실패", "분류실패%"]:
+                if label in ["Etc", "분류실패"]:
+                    item["etcCount"] = to_int(val, "분류실패")
             elif label == "Cluster":
                 item["clusterCount"] = to_int(val, "Cluster")
             elif label == "비고":

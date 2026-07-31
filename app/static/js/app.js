@@ -24,8 +24,8 @@ const labels = {
   totalCount: "총체결",
   ngCount: "NG",
   ngRate: "NG율",
-  etcCount: "Etc",
-  etcRate: "Etc%",
+  etcCount: "분류실패",
+  etcRate: "분류실패%",
   avgCluster: "평균 Cluster",
   processCount: "등록 공정 수",
   dateCount: "등록 날짜 수",
@@ -34,9 +34,9 @@ const metricLabels = {
   totalCount: "총체결",
   ngCount: "NG",
   ngRate: "NG%",
-  etcCount: "Etc",
-  etcRate: "Etc%",
-  ngEtcStack: "NG+Etc",
+  etcCount: "분류실패",
+  etcRate: "분류실패%",
+  ngEtcStack: "NG+분류실패",
   clusterCount: "Cluster",
 };
 const badUp = new Set(["ngCount", "ngRate", "etcCount", "etcRate"]);
@@ -98,7 +98,7 @@ function activeAlerts(alerts) {
 
 function noteDate(row, warning = false) {
   const note = String(row.note || "").trim();
-  if (!note && warning) return `<span class="note-date empty-alert" title="Etc% 연속 초과, 비고 공란">${esc(row.date)}</span>`;
+  if (!note && warning) return `<span class="note-date empty-alert" title="분류실패% 연속 초과, 비고 공란">${esc(row.date)}</span>`;
   if (!note) return esc(row.date);
   const warningClass = warning ? " alert-note" : "";
   return `<button type="button" class="note-date has-note${warningClass}" data-note="${esc(note)}" onmouseenter="showNoteTooltip(event, this)" onmousemove="moveNoteTooltip(event)" onmouseleave="hideNoteTooltip()" onfocus="showNoteTooltip(event, this)" onblur="hideNoteTooltip()" onclick="showNote('${encodeURIComponent(note)}')">${esc(row.date)}</button>`;
@@ -162,6 +162,48 @@ function updateMetricCount() {
   if (target) target.textContent = count ? `${count}개` : "없음";
 }
 
+function dataDateSet() {
+  return new Set(state.options?.dataDates || []);
+}
+
+function isDataDate(value) {
+  return dataDateSet().has(value);
+}
+
+function datesBetween(start, end) {
+  if (!start || !end) return [];
+  const result = [];
+  const cursor = new Date(`${start}T00:00:00`);
+  const last = new Date(`${end}T00:00:00`);
+  while (cursor <= last) {
+    result.push(isoDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+}
+
+function normalizeTrendRows(rows) {
+  const start = $("#start").value;
+  const end = $("#end").value;
+  if (!start || !end) return rows;
+  const byDate = new Map(rows.map((row) => [row.date, row]));
+  return datesBetween(start, end).map((date) => {
+    const row = byDate.get(date);
+    if (row) return { ...row, hasData: true };
+    return {
+      date,
+      totalCount: 0,
+      ngCount: 0,
+      ngRate: 0,
+      etcCount: 0,
+      etcRate: 0,
+      clusterCount: 0,
+      note: "",
+      hasData: false,
+    };
+  });
+}
+
 function updateDateRangeLabel() {
   const start = $("#start").value;
   const end = $("#end").value;
@@ -178,6 +220,27 @@ function setDateRange(start, end, apply = true) {
   updateDateRangeLabel();
   renderDateRangePicker();
   if (apply) applyFiltersImmediately();
+}
+
+function syncQuickRangeSelect() {
+  const select = $("#quickRange");
+  if (!select) return;
+  const start = $("#start").value;
+  const end = $("#end").value;
+  const today = isoDate(new Date());
+  if (start === today && end === today) {
+    select.value = "today";
+    return;
+  }
+  for (const days of ["7", "14", "21", "28"]) {
+    const date = new Date(`${today}T00:00:00`);
+    date.setDate(date.getDate() - Number(days) + 1);
+    if (start === isoDate(date) && end === today) {
+      select.value = days;
+      return;
+    }
+  }
+  select.value = "custom";
 }
 
 function renderDateRangePicker() {
@@ -197,9 +260,10 @@ function renderDateRangePicker() {
     day.setDate(startCell.getDate() + index);
     const value = isoDate(day);
     const inMonth = day.getMonth() === month;
+    const hasData = isDataDate(value);
     const inRange = selectedStart && selectedEnd && value >= selectedStart && value <= selectedEnd;
     const isEdge = value === selectedStart || value === selectedEnd;
-    return `<button type="button" class="${inMonth ? "" : "muted-day"} ${inRange ? "in-range" : ""} ${isEdge ? "range-edge" : ""}" data-date="${value}">${day.getDate()}</button>`;
+    return `<button type="button" class="${inMonth ? "" : "muted-day"} ${hasData ? "" : "disabled-day"} ${inRange ? "in-range" : ""} ${isEdge ? "range-edge" : ""}" data-date="${value}" ${hasData ? "" : "disabled"}>${day.getDate()}</button>`;
   }).join("");
   target.innerHTML = `
     <div class="date-picker-head">
@@ -221,8 +285,10 @@ function shiftDatePickerMonth(step) {
 }
 
 function chooseRangeDate(value) {
+  if (!isDataDate(value)) return;
   if (!state.pendingRangeStart || ($("#start").value && $("#end").value)) {
     state.pendingRangeStart = value;
+    $("#quickRange").value = "custom";
     $("#start").value = value;
     $("#end").value = "";
     updateDateRangeLabel();
@@ -232,6 +298,7 @@ function chooseRangeDate(value) {
   const start = value < state.pendingRangeStart ? value : state.pendingRangeStart;
   const end = value < state.pendingRangeStart ? state.pendingRangeStart : value;
   state.pendingRangeStart = "";
+  $("#quickRange").value = "custom";
   setDateRange(start, end, true);
   $(".date-range-menu").open = false;
 }
@@ -397,6 +464,12 @@ function bind() {
     refreshAll();
   };
   $("#quickRange").onchange = (event) => {
+    if (event.target.value === "custom") {
+      $(".date-range-menu").open = true;
+      renderDateRangePicker();
+      positionFilterMenu($(".date-range-menu"));
+      return;
+    }
     quickRange(event.target.value);
     applyFiltersImmediately();
   };
@@ -583,6 +656,7 @@ function applyUrl() {
   updateFilterCounts();
   updateTrendTitle();
   updateDateRangeLabel();
+  syncQuickRangeSelect();
   state.datePickerMonth = new Date(`${$("#start").value || $("#end").value || isoDate(new Date())}T00:00:00`).toISOString();
   renderDateRangePicker();
 }
@@ -597,10 +671,10 @@ async function loadDashboard() {
     api("/api/trends?" + params()),
     api("/api/compare/process?" + params()),
   ]);
-  state.trends = trends;
+  state.trends = normalizeTrendRows(trends);
   state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
-  renderDailyMain(trends);
+  renderDailyMain(state.trends);
   renderProcessNgEtcChart();
   renderStatusSummary();
   updateTrendTitle();
@@ -695,7 +769,7 @@ function renderProcessNgEtcChart() {
     };
   }).sort((a, b) => (b.ngCount + b.etcCount) - (a.ngCount + a.etcCount) || a.processName.localeCompare(b.processName));
   const asPercent = $("#processComparePercent")?.checked;
-  $("#processNgEtcTitle").textContent = `${selectedHierarchyLabel()} NG/Etc ${asPercent ? "비율" : "누적 수량"}`;
+  $("#processNgEtcTitle").textContent = `${selectedHierarchyLabel()} NG/분류실패 ${asPercent ? "비율" : "누적 수량"}`;
   const visibleRows = rows.slice(0, 30);
   const chartHeight = Math.max(320, Math.min(520, visibleRows.length * 18 + 260));
   target.closest(".chart-box").style.height = `${chartHeight}px`;
@@ -703,7 +777,7 @@ function renderProcessNgEtcChart() {
     labels: visibleRows.map((row) => row.processName),
     datasets: [
       { label: asPercent ? "NG%" : "NG", data: visibleRows.map((row) => asPercent ? row.ngRate : row.ngCount), backgroundColor: "#ff8a8a" },
-      { label: asPercent ? "Etc%" : "Etc", data: visibleRows.map((row) => asPercent ? row.etcRate : row.etcCount), backgroundColor: "#ffcf6e" },
+      { label: asPercent ? "분류실패%" : "분류실패", data: visibleRows.map((row) => asPercent ? row.etcRate : row.etcCount), backgroundColor: "#ffcf6e" },
     ],
   }, {
     scales: {
@@ -899,8 +973,8 @@ function renderDailyMain(rows) {
   const mainRows = [
     ["총체결", ...orderedRows.map((row) => num(row.totalCount))],
     ["NG", ...orderedRows.map((row) => num(row.ngCount))],
-    ["Etc", ...orderedRows.map((row) => num(row.etcCount))],
-    ["Etc%", ...orderedRows.map((row) => warnPct(row.etcRate, "etc_rate_threshold"))],
+    ["분류실패", ...orderedRows.map((row) => num(row.etcCount))],
+    ["분류실패%", ...orderedRows.map((row) => warnPct(row.etcRate, "etc_rate_threshold"))],
     ["Cluster", ...orderedRows.map((row) => num(row.clusterCount))],
     ["비고", ...orderedRows.map((row) => esc(row.note || ""))],
   ];
@@ -944,8 +1018,7 @@ const noteDateHighlightPlugin = {
     if (!xScale) return;
     const ctx = chartInstance.ctx;
     ctx.save();
-    const dates = new Set([...Object.keys(notes), ...alertDateSet]);
-    dates.forEach((date) => {
+    alertDateSet.forEach((date) => {
       const index = chartInstance.data.labels.indexOf(date);
       if (index < 0) return;
       const x = xScale.getPixelForValue(index);
@@ -953,11 +1026,23 @@ const noteDateHighlightPlugin = {
       const textWidth = ctx.measureText(date).width;
       const width = Math.max(78, textWidth + 18);
       roundRect(ctx, x - width / 2, y - 2, width, 22, 6);
-      const isAlert = alertDateSet.has(date);
-      ctx.fillStyle = isAlert ? "rgba(255,107,107,.18)" : "rgba(255,176,32,.16)";
+      ctx.fillStyle = "rgba(255,107,107,.18)";
       ctx.fill();
-      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue(isAlert ? "--bad" : "--warn");
+      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--bad");
       ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+    Object.keys(notes).forEach((date) => {
+      const index = chartInstance.data.labels.indexOf(date);
+      if (index < 0) return;
+      const x = xScale.getPixelForValue(index);
+      const y = xScale.bottom - 22;
+      ctx.beginPath();
+      ctx.arc(x + 28, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--warn");
+      ctx.fill();
+      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--panel");
+      ctx.lineWidth = 1.5;
       ctx.stroke();
     });
     ctx.restore();
@@ -1001,11 +1086,12 @@ function positionFilterMenu(details) {
 
 function chartTrend(rows) {
   const metrics = selectedMetrics();
+  const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
   const noteMap = Object.fromEntries(rows.filter((row) => String(row.note || "").trim()).map((row) => [row.date, String(row.note).trim()]));
   const alertDateList = [...alertDates()];
   const chartTooltipMap = { ...noteMap };
   alertDateList.forEach((date) => {
-    chartTooltipMap[date] ??= "Etc% 연속 초과, 비고 공란";
+    chartTooltipMap[date] ??= "분류실패% 연속 초과, 비고 공란";
   });
   const hasNgEtcStack = metrics.includes("ngEtcStack");
   const lineCountMetrics = metrics.filter((metric) => metric !== "ngEtcStack" && !metric.includes("Rate"));
@@ -1026,7 +1112,8 @@ function chartTrend(rows) {
     datasets.push(
       {
         type: "bar",
-        label: "NG+Etc / NG",
+        label: "NG+분류실패 / NG",
+        metricKey: "ngCount",
         data: rows.map((row) => row.ngCount ?? 0),
         backgroundColor: "rgba(255, 93, 93, .72)",
         borderColor: "#ff5d5d",
@@ -1037,7 +1124,8 @@ function chartTrend(rows) {
       },
       {
         type: "bar",
-        label: "NG+Etc / Etc",
+        label: "NG+분류실패 / 분류실패",
+        metricKey: "etcCount",
         data: rows.map((row) => row.etcCount ?? 0),
         backgroundColor: "rgba(255, 176, 32, .72)",
         borderColor: "#ffb020",
@@ -1052,6 +1140,7 @@ function chartTrend(rows) {
     datasets.push({
       type: "line",
       label: metricLabels[metric],
+      metricKey: metric,
       data: rows.map((row) => row[metric] ?? null),
       borderColor: colors[metric],
       backgroundColor: colors[metric],
@@ -1083,6 +1172,18 @@ function chartTrend(rows) {
   }, {
     plugins: {
       noteDateHighlight: { notes: noteMap, alertDates: alertDateList },
+      tooltip: {
+        filter: (item) => !item.dataset.isGuideLine,
+        callbacks: {
+          label: (context) => {
+            const row = byDate[context.label];
+            const metric = context.dataset.metricKey;
+            const value = context.parsed.y;
+            if (row && row.hasData === false && !context.dataset.isGuideLine) return `${context.dataset.label}: NaN`;
+            return `${context.dataset.label}: ${metric?.includes("Rate") ? pct(value) : fmt(value)}`;
+          },
+        },
+      },
     },
     scales: {
       count: { position: "left", stacked: false, ...countScale, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
@@ -1177,10 +1278,10 @@ function renderProcessRank() {
     labels: rows.slice(0, 10).map((row) => row.processName),
     datasets: [
       { label: "NG율", data: rows.slice(0, 10).map((row) => row.ngRate), backgroundColor: "#ff5d5d" },
-      { label: "Etc%", data: rows.slice(0, 10).map((row) => row.etcRate), backgroundColor: "#ffb020" },
+      { label: "분류실패%", data: rows.slice(0, 10).map((row) => row.etcRate), backgroundColor: "#ffb020" },
     ],
   });
-  renderTable("#rankTable", ["순위", "Line", "Type", "Process", "총체결", "NG", "NG율", "Etc%"], rows.map((row, index) => [
+  renderTable("#rankTable", ["순위", "Line", "Type", "Process", "총체결", "NG", "NG율", "분류실패%"], rows.map((row, index) => [
     index + 1,
     row.line,
     row.type,
@@ -1258,7 +1359,7 @@ function renderDataTable() {
   state.page = Math.min(state.page, pages);
   rows = rows.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
   const visibleIds = rows.map((row) => row.id);
-  renderTable("#dataTable", [selectionHead("measurement", visibleIds), "날짜", "Line", "Type", "Process", "현황", "총체결", "NG", "NG율", "Etc", "Etc%", "Cluster", "비고", "관리"], rows.map((row) => [
+  renderTable("#dataTable", [selectionHead("measurement", visibleIds), "날짜", "Line", "Type", "Process", "현황", "총체결", "NG", "NG율", "분류실패", "분류실패%", "Cluster", "비고", "관리"], rows.map((row) => [
     selectionCell("measurement", row.id),
     noteDate(row, isAlertRow(row)),
     row.line,
@@ -1288,7 +1389,7 @@ function renderPivot() {
     groups[key] ??= { meta: [row.line, row.type, row.processName, row.status], byDate: {} };
     groups[key].byDate[row.date] = row;
   });
-  const metrics = ["총체결", "NG", "Etc", "Etc%", "Cluster", "비고"];
+  const metrics = ["총체결", "NG", "분류실패", "분류실패%", "Cluster", "비고"];
   let html = `<thead><tr>${["Line", "Type", "Process", "현황", "구분", ...dates].map((head) => `<th>${head}</th>`).join("")}</tr></thead><tbody>`;
   Object.values(groups).forEach((group) => {
     metrics.forEach((metric, index) => {
@@ -1300,15 +1401,15 @@ function renderPivot() {
 
 function pivotCell(row, metric) {
   if (!row) return `<td class="zero">-</td>`;
-  const map = { "총체결": row.totalCount, "NG": row.ngCount, "Etc": row.etcCount, "Etc%": pct(row.etcRate), "Cluster": row.clusterCount, "비고": row.note };
-  const editable = isAdmin && metric !== "Etc%";
+  const map = { "총체결": row.totalCount, "NG": row.ngCount, "분류실패": row.etcCount, "분류실패%": pct(row.etcRate), "Cluster": row.clusterCount, "비고": row.note };
+  const editable = isAdmin && metric !== "분류실패%";
   return `<td ${editable ? `contenteditable class="editable" data-id="${row.id}" data-metric="${metric}"` : ""}>${esc(map[metric])}</td>`;
 }
 
 async function savePivot() {
   const byId = {};
   $$("[contenteditable][data-id]").forEach((cell) => {
-    const key = { "총체결": "totalCount", "NG": "ngCount", "Etc": "etcCount", "Cluster": "clusterCount", "비고": "note" }[cell.dataset.metric];
+    const key = { "총체결": "totalCount", "NG": "ngCount", "분류실패": "etcCount", "Cluster": "clusterCount", "비고": "note" }[cell.dataset.metric];
     if (!key) return;
     byId[cell.dataset.id] ??= {};
     byId[cell.dataset.id][key] = cell.textContent.trim();
@@ -1342,7 +1443,7 @@ async function saveEntry(event) {
 
 function editMeasurement(id) {
   const row = state.rows.find((item) => item.id === id);
-  modal("측정 데이터 수정", `<div class="form-grid"><label>총체결<input name="totalCount" type="number" value="${row.totalCount}"></label><label>NG<input name="ngCount" type="number" value="${row.ngCount}"></label><label>Etc<input name="etcCount" type="number" value="${row.etcCount}"></label><label>Cluster<input name="clusterCount" type="number" value="${row.clusterCount}"></label><label class="wide">비고<textarea name="note">${esc(row.note)}</textarea></label></div>`, async () => {
+  modal("측정 데이터 수정", `<div class="form-grid"><label>총체결<input name="totalCount" type="number" value="${row.totalCount}"></label><label>NG<input name="ngCount" type="number" value="${row.ngCount}"></label><label>분류실패<input name="etcCount" type="number" value="${row.etcCount}"></label><label>Cluster<input name="clusterCount" type="number" value="${row.clusterCount}"></label><label class="wide">비고<textarea name="note">${esc(row.note)}</textarea></label></div>`, async () => {
     await api(`/api/measurements/${id}`, { method: "PUT", body: JSON.stringify(modalData()) });
     toast("수정했습니다");
     refreshAll();
@@ -1381,7 +1482,7 @@ function parseBulkTextLocal() {
   const firstDateIndex = dateColumns[0]?.index ?? 0;
   const dates = dateColumns.map((item) => item.date);
   const rows = dates.map((day) => ({ date: day, totalCount: 0, ngCount: 0, etcCount: 0, clusterCount: 0 }));
-  const keyMap = { "총체결": "totalCount", "총 체결": "totalCount", "NG": "ngCount", "ETC": "etcCount", "Etc": "etcCount", "Cluster": "clusterCount", "Cluster(Upper)": "clusterCount" };
+  const keyMap = { "총체결": "totalCount", "총 체결": "totalCount", "NG": "ngCount", "ETC": "etcCount", "Etc": "etcCount", "분류실패": "etcCount", "Cluster": "clusterCount", "Cluster(Upper)": "clusterCount" };
   matrix.slice(1).forEach((parts) => {
     const parsed = splitBulkLabelLocal(parts, keyMap);
     const key = keyMap[parsed.label];
@@ -1415,7 +1516,7 @@ function splitBulkLabelLocal(parts, keyMap) {
 
 function renderBulkTextPreview() {
   const rows = parseBulkTextLocal();
-  renderTable("#bulkTextPreview", ["날짜", "총체결", "NG", "ETC", "Cluster"], rows.map((row) => [
+  renderTable("#bulkTextPreview", ["날짜", "총체결", "NG", "분류실패", "Cluster"], rows.map((row) => [
     row.date,
     fmt(row.totalCount),
     fmt(row.ngCount),
