@@ -854,7 +854,7 @@ function renderSummaryCards() {
         <span class="summary-target">/ ${fmt(goal)}</span>
       </div>
       <div class="summary-card-bottom">
-        <div class="summary-sub">공정 수 / ${selectedType ? `${esc(selectedType)} Type` : "전체"} 총 공정 수 ${pct(ratio)}<br>최근 5주 데이터 등록 공정 변화</div>
+        <div class="summary-sub">${pct(ratio)}</div>
         ${summarySparkline(weekValues)}
       </div>
     </article>
@@ -1301,14 +1301,13 @@ function renderGroupedProcessTrend(rows) {
     labels: dates,
     datasets,
   }, {
-    indexAxis: "y",
     plugins: {
       tooltip: {
         callbacks: {
           label: (context) => {
             const metric = context.dataset.metricKey;
             const sourceMetric = context.dataset.sourceMetric || metric;
-            const value = context.parsed.x;
+            const value = context.parsed.y;
             const suffix = sourceMetric === "ngEtcStack" && asPercent ? "%" : metric?.includes("Rate") ? "%" : "";
             const formatted = suffix ? pct(value) : fmt(value);
             return `${context.dataset.processName} / ${metricLabels[metric]}: ${formatted}`;
@@ -1319,11 +1318,15 @@ function renderGroupedProcessTrend(rows) {
     scales: {
       x: {
         stacked: true,
+        ticks: { color: "#a8b3c7", maxRotation: 45, minRotation: 0 },
+        grid: { color: "rgba(148,163,184,.12)" },
+      },
+      y: {
+        stacked: true,
         beginAtZero: true,
         ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
         grid: { color: "rgba(148,163,184,.16)" },
       },
-      y: { stacked: true, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },
   });
   bindTrendDateClick(trendChart);
