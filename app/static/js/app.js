@@ -697,6 +697,7 @@ async function loadDashboard() {
   state.trends = normalizeTrendRows(trends);
   state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
+  renderSummaryCards();
   renderDailyMain(state.trends);
   const groupMode = isProcessGroupTrendMode();
   $("#processNgEtcPanel")?.classList.toggle("hidden", groupMode);
@@ -765,6 +766,99 @@ function renderStatusSummary() {
       <span>전체 활성 공정</span>
     </article>
   `).join("");
+}
+
+function selectedSummaryName() {
+  const process = checkedValues("process")[0];
+  const line = checkedValues("line")[0];
+  const type = checkedValues("type")[0];
+  if (process) return { name: process, level: "Process" };
+  if (line) return { name: line, level: "Line" };
+  if (type) return { name: type, level: "Type" };
+  return { name: "전체", level: "공정" };
+}
+
+function weekStart(value) {
+  const date = new Date(`${value}T00:00:00`);
+  const day = date.getDay();
+  date.setDate(date.getDate() - ((day + 6) % 7));
+  return isoDate(date);
+}
+
+function lastFiveWeeks() {
+  const end = $("#end").value || isoDate(new Date());
+  const base = new Date(`${weekStart(end)}T00:00:00`);
+  return Array.from({ length: 5 }, (_, index) => {
+    const date = new Date(base);
+    date.setDate(base.getDate() - (4 - index) * 7);
+    return isoDate(date);
+  });
+}
+
+function summarySparkline(values) {
+  const width = 92;
+  const height = 36;
+  const max = Math.max(...values, 1);
+  const points = values.map((value, index) => {
+    const x = values.length === 1 ? width / 2 : index * (width / (values.length - 1));
+    const y = height - 4 - (Number(value || 0) / max) * (height - 8);
+    return { x, y, value };
+  });
+  const line = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const area = `0,${height} ${line} ${width},${height}`;
+  return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="5주 변화 미니 그래프">
+    <polygon class="spark-area" points="${area}"></polygon>
+    <polyline points="${line}"></polyline>
+    ${points.map((point, index) => {
+      const diff = index === 0 ? 0 : point.value - points[index - 1].value;
+      return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3"><title>전주 대비 ${diff >= 0 ? "+" : ""}${fmt(diff)}건</title></circle>`;
+    }).join("")}
+  </svg>`;
+}
+
+function robotIcon() {
+  return `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M7 13h8l3-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4 17h6l2-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M15 9l2 2 3-3-2-2-3 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M4 20h6M7 17v3M6 13h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function renderSummaryCards() {
+  const target = $("#summaryCards");
+  if (!target || !state.options?.processes) return;
+  const active = state.options.processes.filter((process) => process.isActive);
+  const selectedType = checkedValues("type")[0] || "";
+  const currentProcesses = filteredProcesses(true);
+  const targetProcesses = selectedType ? active.filter((process) => process.type === selectedType) : active;
+  const current = currentProcesses.length;
+  const goal = Math.max(targetProcesses.length, 0);
+  const ratio = goal ? current / goal * 100 : 0;
+  const selected = selectedSummaryName();
+  const weeks = lastFiveWeeks();
+  const weekValues = weeks.map((week) => {
+    const next = new Date(`${week}T00:00:00`);
+    next.setDate(next.getDate() + 7);
+    const end = isoDate(next);
+    return new Set(state.rows.filter((row) => row.date >= week && row.date < end).map((row) => row.processId)).size;
+  });
+  target.innerHTML = `
+    <article class="summary-card">
+      <div class="summary-card-top">
+        <h4 class="summary-card-title">${esc(selected.name)} ${esc(selected.level)} 공정 수</h4>
+        <span class="summary-icon">${robotIcon()}</span>
+      </div>
+      <div class="summary-card-main">
+        <strong class="summary-current">${fmt(current)}</strong>
+        <span class="summary-target">/ ${fmt(goal)}</span>
+      </div>
+      <div class="summary-card-bottom">
+        <div class="summary-sub">공정 수 / ${selectedType ? `${esc(selectedType)} Type` : "전체"} 총 공정 수 ${pct(ratio)}<br>최근 5주 데이터 등록 공정 변화</div>
+        ${summarySparkline(weekValues)}
+      </div>
+    </article>
+  `;
 }
 
 function selectedHierarchyLabel() {
