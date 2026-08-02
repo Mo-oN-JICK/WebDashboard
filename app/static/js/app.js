@@ -1301,159 +1301,179 @@ function processTrendValue(row, metric, asPercent) {
   return Number(row[metric] || 0);
 }
 
-function renderGroupedProcessTrend(rows) {
-  const metrics = selectedMetrics();
-  const asPercent = $("#trendPercentToggle")?.checked;
-  const dates = rows.map((row) => row.date);
-  const processNames = [...new Set(filteredProcesses(true).map((row) => row.processName))].sort((a, b) => a.localeCompare(b));
-  const byKey = new Map();
-  state.rows.forEach((row) => {
-    const key = `${row.date}||${row.processName}`;
-    const item = byKey.get(key) || { date: row.date, processName: row.processName, totalCount: 0, ngCount: 0, etcCount: 0, clusterCount: 0 };
-    item.totalCount += Number(row.totalCount || 0);
-    item.ngCount += Number(row.ngCount || 0);
-    item.etcCount += Number(row.etcCount || 0);
-    item.clusterCount += Number(row.clusterCount || 0);
-    item.ngRate = rateLocal(item.ngCount, item.totalCount);
-    item.etcRate = rateLocal(item.etcCount, item.totalCount);
-    byKey.set(key, item);
+function processCardId(process) {
+  return `processTrend_${process.id}`;
+}
+
+function processRowByDate(rows, process, dates) {
+  const map = new Map();
+  state.rows
+    .filter((row) => Number(row.processId) === Number(process.id))
+    .forEach((row) => {
+      map.set(row.date, row);
+    });
+  return dates.map((date) => map.get(date) || {
+    date,
+    processId: process.id,
+    processName: process.processName,
+    totalCount: 0,
+    ngCount: 0,
+    ngRate: 0,
+    etcCount: 0,
+    etcRate: 0,
+    clusterCount: 0,
+    hasData: false,
   });
-  const datasets = [];
-  const selected = (metrics.length ? metrics : ["ngEtcStack"])
+}
+
+function selectedGroupedMetrics() {
+  const metrics = selectedMetrics();
+  return (metrics.length ? metrics : ["ngEtcStack"])
     .filter((metric) => !(metrics.includes("ngEtcStack") && ["ngCount", "etcCount"].includes(metric)));
-  selected.forEach((metric, metricIndex) => {
+}
+
+function destroyProcessTrendCharts() {
+  Object.keys(state.charts).filter((key) => key.startsWith("#processTrend_")).forEach((key) => {
+    state.charts[key]?.destroy();
+    delete state.charts[key];
+  });
+}
+
+function processCardDatasets(processRows, selected, asPercent) {
+  const datasets = [];
+  selected.forEach((metric, index) => {
     if (metric === "ngEtcStack") {
-      processNames.forEach((processName, processIndex) => {
-        datasets.push(
-          {
-            type: "bar",
-            label: `${processName} / NG`,
-            metricKey: "ngCount",
-            sourceMetric: "ngEtcStack",
-            processName,
-            legendLabel: processName,
-            data: dates.map((date) => {
-              const row = byKey.get(`${date}||${processName}`) || {};
-              return asPercent ? Number(row.ngRate || 0) : Number(row.ngCount || 0);
-            }),
-            backgroundColor: processColor(processIndex, 0.78),
-            borderColor: processColor(processIndex, 1),
-            borderWidth: 1,
-            stack: processName,
-          },
-          {
-            type: "bar",
-            label: `${processName} / 분류실패`,
-            metricKey: "etcCount",
-            sourceMetric: "ngEtcStack",
-            processName,
-            legendLabel: processName,
-            data: dates.map((date) => {
-              const row = byKey.get(`${date}||${processName}`) || {};
-              return asPercent ? Number(row.etcRate || 0) : Number(row.etcCount || 0);
-            }),
-            backgroundColor: processColor(processIndex, 0.38),
-            borderColor: processColor(processIndex, 1),
-            borderWidth: 1,
-            stack: processName,
-          },
-        );
-      });
+      datasets.push(
+        {
+          label: "NG",
+          metricKey: "ngCount",
+          sourceMetric: "ngEtcStack",
+          data: processRows.map((row) => asPercent ? Number(row.ngRate || 0) : Number(row.ngCount || 0)),
+          backgroundColor: "rgba(255, 93, 93, .76)",
+          borderColor: "#ff5d5d",
+          borderWidth: 1,
+          stack: "ngEtc",
+        },
+        {
+          label: "분류실패",
+          metricKey: "etcCount",
+          sourceMetric: "ngEtcStack",
+          data: processRows.map((row) => asPercent ? Number(row.etcRate || 0) : Number(row.etcCount || 0)),
+          backgroundColor: "rgba(255, 176, 32, .76)",
+          borderColor: "#ffb020",
+          borderWidth: 1,
+          stack: "ngEtc",
+        },
+      );
       return;
     }
-    processNames.forEach((processName, processIndex) => {
-      datasets.push({
-        type: "bar",
-        label: selected.length === 1 ? processName : `${processName} / ${metricLabels[metric]}`,
-        metricKey: metric,
-        sourceMetric: metric,
-        processName,
-        legendLabel: processName,
-        data: dates.map((date) => processTrendValue(byKey.get(`${date}||${processName}`) || {}, metric, asPercent)),
-        backgroundColor: processColor(processIndex, selected.length === 1 ? 0.78 : Math.max(0.38, 0.78 - metricIndex * 0.12)),
-        borderColor: processColor(processIndex, 1),
-        borderWidth: 1,
-        stack: metric,
-      });
+    datasets.push({
+      label: metricLabels[metric],
+      metricKey: metric,
+      sourceMetric: metric,
+      data: processRows.map((row) => processTrendValue(row, metric, asPercent)),
+      backgroundColor: processColor(index, 0.72),
+      borderColor: processColor(index, 1),
+      borderWidth: 1,
+      stack: metric.includes("Rate") ? "rate" : "count",
     });
   });
-  const maxRows = Math.max(1, dates.length);
-  $("#trendChart").closest(".chart-box").style.height = `${Math.max(360, Math.min(720, maxRows * 42 + 180))}px`;
-  const trendChart = chart("#trendChart", "bar", {
-    labels: dates,
-    datasets,
-  }, {
-    interaction: { mode: "nearest", intersect: true },
-    plugins: {
-      legend: {
-        labels: {
-          generateLabels: (chartInstance) => {
-            const seen = new Set();
-            return chartInstance.data.datasets.flatMap((dataset, datasetIndex) => {
-              const label = dataset.legendLabel || dataset.processName || dataset.label;
-              if (seen.has(label)) return [];
-              seen.add(label);
-              const visible = chartInstance.data.datasets
-                .map((item, index) => ({ item, index }))
-                .filter(({ item }) => (item.legendLabel || item.processName || item.label) === label)
-                .some(({ index }) => chartInstance.isDatasetVisible(index));
-              return [{
-                text: label,
-                fillStyle: dataset.borderColor,
-                strokeStyle: dataset.borderColor,
-                fontColor: getComputedStyle(document.body).getPropertyValue("--text"),
-                hidden: !visible,
-                datasetIndex,
-              }];
-            });
+  return datasets;
+}
+
+function showProcessDetail(processId) {
+  const process = state.options.processes.find((item) => Number(item.id) === Number(processId));
+  if (!process) return;
+  setRadioValue("type", process.type);
+  linkedFilters();
+  setRadioValue("line", process.line);
+  linkedFilters();
+  setRadioValue("process", process.processName);
+  updateFilterCounts();
+  updateTrendTitle();
+  applyFiltersImmediately();
+}
+
+function renderGroupedProcessTrend(rows) {
+  const asPercent = $("#trendPercentToggle")?.checked;
+  const dates = rows.map((row) => row.date);
+  const selected = selectedGroupedMetrics();
+  const processes = filteredProcesses(true).sort((a, b) => a.processName.localeCompare(b.processName));
+  const grid = $("#processTrendCards");
+  $("#trendChart").closest(".chart-box").classList.add("hidden");
+  grid.classList.remove("hidden");
+  destroyProcessTrendCharts();
+  grid.innerHTML = processes.map((process) => `
+    <article class="process-trend-card" data-process-id="${process.id}">
+      <header class="process-trend-head">
+        <div class="process-trend-title">
+          <div class="process-trend-tags">
+            <span class="process-tag line">${esc(process.line)}</span>
+            ${process.status ? `<span class="process-tag">${esc(process.status)}</span>` : ""}
+          </div>
+          <div class="process-name" title="${esc(process.processName)}">${esc(process.processName)}</div>
+        </div>
+        <div class="process-card-actions">
+          <button type="button" class="ghost" title="상세 보기" data-expand-process="${process.id}">↗</button>
+          <button type="button" class="ghost" title="카드 닫기" data-close-process="${process.id}">×</button>
+        </div>
+      </header>
+      <div class="process-trend-period">${esc($("#start").value || "-")} ~ ${esc($("#end").value || "-")}</div>
+      <div class="process-card-chart"><canvas id="${processCardId(process)}"></canvas></div>
+    </article>
+  `).join("") || `<div class="empty">표시할 공정이 없습니다</div>`;
+  grid.onclick = (event) => {
+    const expand = event.target.closest("[data-expand-process]");
+    if (expand) {
+      showProcessDetail(expand.dataset.expandProcess);
+      return;
+    }
+    const close = event.target.closest("[data-close-process]");
+    if (close) {
+      const card = event.target.closest(".process-trend-card");
+      const chartKey = `#${processCardId({ id: close.dataset.closeProcess })}`;
+      state.charts[chartKey]?.destroy();
+      delete state.charts[chartKey];
+      card?.remove();
+    }
+  };
+  processes.forEach((process) => {
+    const processRows = processRowByDate(rows, process, dates);
+    chart(`#${processCardId(process)}`, "bar", {
+      labels: dates,
+      datasets: processCardDatasets(processRows, selected, asPercent),
+    }, {
+      interaction: { mode: "nearest", intersect: true },
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { color: getComputedStyle(document.body).getPropertyValue("--text") },
+        },
+        tooltip: {
+          mode: "nearest",
+          intersect: true,
+          callbacks: {
+            label: (context) => {
+              const metric = context.dataset.metricKey;
+              const sourceMetric = context.dataset.sourceMetric || metric;
+              const value = context.parsed.y;
+              const suffix = sourceMetric === "ngEtcStack" && asPercent ? "%" : metric?.includes("Rate") ? "%" : "";
+              return `${context.dataset.label}: ${suffix ? pct(value) : fmt(value)}`;
+            },
           },
         },
-        onClick: (_event, legendItem, legend) => {
-          const chartInstance = legend.chart;
-          const dataset = chartInstance.data.datasets[legendItem.datasetIndex];
-          const label = dataset.legendLabel || dataset.processName || dataset.label;
-          const visible = chartInstance.data.datasets
-            .map((item, index) => ({ item, index }))
-            .filter(({ item }) => (item.legendLabel || item.processName || item.label) === label)
-            .some(({ index }) => chartInstance.isDatasetVisible(index));
-          chartInstance.data.datasets.forEach((item, index) => {
-            if ((item.legendLabel || item.processName || item.label) === label) {
-              chartInstance.setDatasetVisibility(index, !visible);
-            }
-          });
-          chartInstance.update();
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: "#a8b3c7", maxRotation: 45, minRotation: 0 }, grid: { color: "rgba(148,163,184,.12)" } },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
+          grid: { color: "rgba(148,163,184,.16)" },
         },
       },
-      tooltip: {
-        mode: "nearest",
-        intersect: true,
-        callbacks: {
-          label: (context) => {
-            const metric = context.dataset.metricKey;
-            const sourceMetric = context.dataset.sourceMetric || metric;
-            const value = context.parsed.y;
-            const suffix = sourceMetric === "ngEtcStack" && asPercent ? "%" : metric?.includes("Rate") ? "%" : "";
-            const formatted = suffix ? pct(value) : fmt(value);
-            return `${context.dataset.processName} / ${metricLabels[metric]}: ${formatted}`;
-          },
-        },
-      },
-    },
-    scales: {
-      x: {
-        stacked: true,
-        ticks: { color: "#a8b3c7", maxRotation: 45, minRotation: 0 },
-        grid: { color: "rgba(148,163,184,.12)" },
-      },
-      y: {
-        stacked: true,
-        beginAtZero: true,
-        ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
-        grid: { color: "rgba(148,163,184,.16)" },
-      },
-    },
+    });
   });
-  bindTrendDateClick(trendChart);
 }
 
 function chartTrend(rows) {
@@ -1461,6 +1481,9 @@ function chartTrend(rows) {
     renderGroupedProcessTrend(rows);
     return;
   }
+  $("#processTrendCards")?.classList.add("hidden");
+  $("#trendChart").closest(".chart-box").classList.remove("hidden");
+  destroyProcessTrendCharts();
   $("#trendChart").closest(".chart-box").style.height = "";
   const metrics = selectedMetrics();
   const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
