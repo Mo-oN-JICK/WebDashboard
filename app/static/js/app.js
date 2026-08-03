@@ -1152,6 +1152,12 @@ function isAlertRow(row) {
 }
 
 function renderDailyMain(rows) {
+  const table = $("#dailyMainTable");
+  table.classList.toggle("grouped-main", isProcessGroupTrendMode());
+  if (isProcessGroupTrendMode()) {
+    renderGroupedDailyMain(rows);
+    return;
+  }
   const dates = alertDates();
   const orderedRows = [...rows].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const headers = ["구분", ...orderedRows.map((row) => noteDate(row, dates.has(row.date)))];
@@ -1164,6 +1170,36 @@ function renderDailyMain(rows) {
     ["비고", ...orderedRows.map((row) => esc(row.note || ""))],
   ];
   renderTable("#dailyMainTable", headers, mainRows);
+}
+
+function emptyDailyCell() {
+  return `<span class="zero">-</span>`;
+}
+
+function renderGroupedDailyMain(rows) {
+  const orderedDates = [...rows].sort((a, b) => String(a.date).localeCompare(String(b.date))).map((row) => row.date);
+  const processes = filteredProcesses(true).sort((a, b) => a.processName.localeCompare(b.processName));
+  const byKey = new Map(state.rows.map((row) => [`${row.processId}||${row.date}`, row]));
+  const metrics = [
+    ["총체결", (row) => row ? num(row.totalCount) : emptyDailyCell()],
+    ["NG", (row) => row ? num(row.ngCount) : emptyDailyCell()],
+    ["NG%", (row) => row ? warnPct(row.ngRate, "ng_rate_threshold") : emptyDailyCell()],
+    ["분류실패", (row) => row ? num(row.etcCount) : emptyDailyCell()],
+    ["분류실패%", (row) => row ? warnPct(row.etcRate, "etc_rate_threshold") : emptyDailyCell()],
+    ["Cluster", (row) => row ? num(row.clusterCount) : emptyDailyCell()],
+    ["비고", (row) => row ? esc(row.note || "") : ""],
+  ];
+  const bodyRows = [];
+  processes.forEach((process) => {
+    metrics.forEach(([metric, valueFn], index) => {
+      bodyRows.push([
+        index === 0 ? `<strong>${esc(process.processName)}</strong><div class="muted small">${esc(process.line)} / ${esc(process.type)}</div>` : "",
+        metric,
+        ...orderedDates.map((date) => valueFn(byKey.get(`${process.id}||${date}`))),
+      ]);
+    });
+  });
+  renderTable("#dailyMainTable", ["Process", "구분", ...orderedDates], bodyRows);
 }
 
 function chart(id, type, data, options = {}) {
