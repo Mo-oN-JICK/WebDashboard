@@ -1443,15 +1443,15 @@ function renderGroupedProcessTrend(rows) {
       labels: dates,
       datasets: processCardDatasets(processRows, selected, asPercent),
     }, {
-      interaction: { mode: "nearest", intersect: true },
+      interaction: { mode: "index", intersect: false },
       plugins: {
         legend: {
           position: "bottom",
           labels: { color: getComputedStyle(document.body).getPropertyValue("--text") },
         },
         tooltip: {
-          mode: "nearest",
-          intersect: true,
+          mode: "index",
+          intersect: false,
           callbacks: {
             label: (context) => {
               const metric = context.dataset.metricKey;
