@@ -710,7 +710,6 @@ async function loadDashboard() {
   $("#processNgEtcPanel")?.classList.toggle("hidden", groupMode);
   $("#trendPercentToggleWrap")?.classList.toggle("hidden", !groupMode);
   if (!groupMode) renderProcessNgEtcChart();
-  renderStatusSummary();
   updateTrendTitle();
   chartTrend(state.trends);
   renderAlertButtons();
@@ -755,24 +754,6 @@ function statusBase(value) {
   const direct = defaultStatuses.find((status) => raw === status || raw.startsWith(`${status} - `));
   if (direct) return direct;
   return statusAliases[raw] || statusAliases[raw.split(" - ")[0]] || "";
-}
-
-function renderStatusSummary() {
-  const target = $("#statusSummary");
-  if (!target || !state.options?.processes) return;
-  const counts = Object.fromEntries(defaultStatuses.map((status) => [status, 0]));
-  state.options.processes.filter((process) => process.isActive).forEach((process) => {
-    const base = statusBase(process.status);
-    if (base && counts[base] !== undefined) counts[base] += 1;
-  });
-  const classes = ["stable", "exception", "inspection", "idle"];
-  target.innerHTML = defaultStatuses.map((status, index) => `
-    <article class="status-card ${classes[index]}">
-      <p>${esc(status)}</p>
-      <strong>${fmt(counts[status])}</strong>
-      <span>전체 활성 공정</span>
-    </article>
-  `).join("");
 }
 
 function selectedSummaryName() {
