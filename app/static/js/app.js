@@ -198,12 +198,17 @@ function datesBetween(start, end) {
   return result;
 }
 
+function isWeekendDate(value) {
+  const day = new Date(`${value}T00:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
 function normalizeTrendRows(rows) {
   const start = $("#start").value;
   const end = $("#end").value;
   if (!start || !end) return rows;
   const byDate = new Map(rows.map((row) => [row.date, row]));
-  return datesBetween(start, end).map((date) => {
+  return datesBetween(start, end).filter((date) => !isWeekendDate(date) || byDate.has(date)).map((date) => {
     const row = byDate.get(date);
     if (row) return { ...row, hasData: true };
     return {
