@@ -1274,6 +1274,25 @@ const noteDateHighlightPlugin = {
   },
 };
 
+const overPercentWavePlugin = {
+  id: "overPercentWave",
+  afterDraw(chartInstance) {
+    const indexes = chartInstance.options.plugins.overPercentWave?.indexes || [];
+    if (!indexes.length) return;
+    const xScale = chartInstance.scales.x;
+    const area = chartInstance.chartArea;
+    if (!xScale || !area) return;
+    const ctx = chartInstance.ctx;
+    ctx.save();
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--warn");
+    ctx.font = "900 18px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    indexes.forEach((index) => ctx.fillText("~", xScale.getPixelForValue(index), area.top + 4));
+    ctx.restore();
+  },
+};
+
 function roundRect(ctx, x, y, width, height, radius) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
@@ -1290,6 +1309,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 
 if (window.Chart) {
   Chart.register(noteDateHighlightPlugin);
+  Chart.register(overPercentWavePlugin);
 }
 
 function positionFilterMenu(details) {
@@ -1407,6 +1427,23 @@ function processCardDatasets(processRows, selected, asPercent) {
   return datasets;
 }
 
+function overPercentIndexes(datasets) {
+  const indexes = new Set();
+  const stackTotals = {};
+  datasets.forEach((dataset) => {
+    (dataset.data || []).forEach((raw, index) => {
+      const value = Number(raw || 0);
+      if (value > 10) indexes.add(index);
+      const key = `${dataset.stack || dataset.label}||${index}`;
+      stackTotals[key] = (stackTotals[key] || 0) + value;
+    });
+  });
+  Object.entries(stackTotals).forEach(([key, value]) => {
+    if (value > 10) indexes.add(Number(key.split("||")[1]));
+  });
+  return [...indexes];
+}
+
 function showProcessDetail(processId) {
   const process = state.options.processes.find((item) => Number(item.id) === Number(processId));
   if (!process) return;
@@ -1464,14 +1501,18 @@ function renderGroupedProcessTrend(rows) {
   };
   processes.forEach((process) => {
     const processRows = processRowByDate(rows, process, dates);
+    const datasets = processCardDatasets(processRows, selected, asPercent);
     chart(`#${processCardId(process)}`, "bar", {
       labels: dates.map(compactDate),
-      datasets: processCardDatasets(processRows, selected, asPercent),
+      datasets,
     }, {
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: {
           display: false,
+        },
+        overPercentWave: {
+          indexes: asPercent ? overPercentIndexes(datasets) : [],
         },
         tooltip: {
           mode: "index",
@@ -1492,6 +1533,7 @@ function renderGroupedProcessTrend(rows) {
         y: {
           stacked: true,
           beginAtZero: true,
+          max: asPercent ? 10 : undefined,
           ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
           grid: { color: "rgba(148,163,184,.16)" },
         },
