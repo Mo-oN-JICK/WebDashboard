@@ -40,6 +40,7 @@ const metricLabels = {
   clusterCount: "Cluster",
 };
 const badUp = new Set(["ngCount", "ngRate", "etcCount", "etcRate"]);
+const PERCENT_AXIS_MAX = 10;
 const defaultStatuses = ["판정 안정", "예외 초과", "설비 점검", "비가동"];
 const statusAliases = {
   "안정화 상태": "판정 안정",
@@ -971,7 +972,7 @@ function renderProcessNgEtcChart() {
   }, {
     scales: {
       x: { stacked: false, ticks: { maxRotation: 45, minRotation: 0 } },
-      y: { stacked: false, beginAtZero: true, ticks: { callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") } },
+      y: { stacked: false, beginAtZero: true, max: asPercent ? PERCENT_AXIS_MAX : undefined, ticks: { callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") } },
     },
     plugins: {
       tooltip: {
@@ -1433,13 +1434,13 @@ function overPercentIndexes(datasets) {
   datasets.forEach((dataset) => {
     (dataset.data || []).forEach((raw, index) => {
       const value = Number(raw || 0);
-      if (value > 10) indexes.add(index);
+      if (value > PERCENT_AXIS_MAX) indexes.add(index);
       const key = `${dataset.stack || dataset.label}||${index}`;
       stackTotals[key] = (stackTotals[key] || 0) + value;
     });
   });
   Object.entries(stackTotals).forEach(([key, value]) => {
-    if (value > 10) indexes.add(Number(key.split("||")[1]));
+    if (value > PERCENT_AXIS_MAX) indexes.add(Number(key.split("||")[1]));
   });
   return [...indexes];
 }
@@ -1533,7 +1534,7 @@ function renderGroupedProcessTrend(rows) {
         y: {
           stacked: true,
           beginAtZero: true,
-          max: asPercent ? 10 : undefined,
+          max: asPercent ? PERCENT_AXIS_MAX : undefined,
           ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
           grid: { color: "rgba(148,163,184,.16)" },
         },
@@ -1662,7 +1663,7 @@ function chartTrend(rows) {
       count: { position: "left", stacked: false, ...countScale, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.16)" } },
       stackCount: { position: "left", display: false, stacked: true, ...countScale, grid: { display: false } },
       total: { position: "right", display: metrics.includes("totalCount"), ...totalScale, ticks: { color: "#5b8cff" }, grid: { drawOnChartArea: false } },
-      pct: { position: "right", ticks: { color: "#a8b3c7", callback: (value) => value + "%" }, grid: { drawOnChartArea: false } },
+      pct: { position: "right", min: 0, max: PERCENT_AXIS_MAX, ticks: { color: "#a8b3c7", callback: (value) => value + "%" }, grid: { drawOnChartArea: false } },
       x: { stacked: false, ticks: { color: "#a8b3c7" }, grid: { color: "rgba(148,163,184,.12)" } },
     },
   });
@@ -1755,6 +1756,10 @@ function renderProcessRank() {
       { label: "NG율", data: rows.slice(0, 10).map((row) => row.ngRate), backgroundColor: "#ff5d5d" },
       { label: "분류실패%", data: rows.slice(0, 10).map((row) => row.etcRate), backgroundColor: "#ffb020" },
     ],
+  }, {
+    scales: {
+      y: { beginAtZero: true, max: PERCENT_AXIS_MAX, ticks: { callback: (value) => `${value}%` } },
+    },
   });
   renderTable("#rankTable", ["순위", "Line", "Type", "Process", "총체결", "NG", "NG율", "분류실패%"], rows.map((row, index) => [
     index + 1,
