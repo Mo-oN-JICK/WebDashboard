@@ -66,6 +66,10 @@ function isoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function compactDate(value) {
+  return String(value || "").slice(5) || value;
+}
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -1440,7 +1444,6 @@ function renderGroupedProcessTrend(rows) {
           <button type="button" class="ghost" title="카드 닫기" data-close-process="${process.id}">×</button>
         </div>
       </header>
-      <div class="process-trend-period">${esc($("#start").value || "-")} ~ ${esc($("#end").value || "-")}</div>
       <div class="process-card-chart"><canvas id="${processCardId(process)}"></canvas></div>
     </article>
   `).join("") || `<div class="empty">표시할 공정이 없습니다</div>`;
@@ -1462,14 +1465,13 @@ function renderGroupedProcessTrend(rows) {
   processes.forEach((process) => {
     const processRows = processRowByDate(rows, process, dates);
     chart(`#${processCardId(process)}`, "bar", {
-      labels: dates,
+      labels: dates.map(compactDate),
       datasets: processCardDatasets(processRows, selected, asPercent),
     }, {
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: {
-          position: "bottom",
-          labels: { color: getComputedStyle(document.body).getPropertyValue("--text") },
+          display: false,
         },
         tooltip: {
           mode: "index",
