@@ -63,6 +63,7 @@ def measurement_dict(row: DailyMeasurement) -> dict[str, Any]:
     return {
         "id": row.id,
         "date": row.measurementDate.isoformat(),
+        "product": row.process.product,
         "line": row.process.line,
         "type": row.process.type,
         "processId": row.processId,
@@ -89,6 +90,7 @@ def filtered_query(args: dict[str, Any]):
         query = query.filter(DailyMeasurement.measurementDate <= parse_date(end))
     for key, col in {
         "line": ProcessMaster.line,
+        "product": ProcessMaster.product,
         "type": ProcessMaster.type,
         "process": ProcessMaster.processName,
         "status": ProcessMaster.status,
@@ -103,6 +105,7 @@ def filtered_query(args: dict[str, Any]):
         like = f"%{q}%"
         query = query.filter(
             ProcessMaster.line.ilike(like)
+            | ProcessMaster.product.ilike(like)
             | ProcessMaster.type.ilike(like)
             | ProcessMaster.processName.ilike(like)
             | ProcessMaster.status.ilike(like)
@@ -180,7 +183,7 @@ def import_rows(raw_rows: list[dict[str, Any]], duplicate_mode: str, user) -> di
             if row.get("__error"):
                 raise ValueError(row["__error"])
             proc = ProcessMaster.query.filter_by(
-                line=row["line"], type=row["type"], processName=row["processName"]
+                product=row.get("product") or row["type"], line=row["line"], processName=row["processName"]
             ).first()
             if not proc:
                 raise ValueError("존재하지 않는 공정")
@@ -227,6 +230,7 @@ def normalize_import(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for r in cleaned:
             base_row = {
                 "line": str(r.get("Line", "")).strip(),
+                "product": str(r.get("Product", "") or r.get("Type", "")).strip(),
                 "type": str(r.get("Type", "")).strip(),
                 "processName": str(r.get("Process", "")).strip(),
                 "measurementDate": r.get("날짜", ""),
@@ -254,22 +258,24 @@ def normalize_import(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     base = ["Line", "Type", "Process", "현황", "구분"]
     if not set(base).issubset(cols):
         raise ValueError("Long Format 또는 Wide Format 필수 열이 없습니다")
-    date_cols = [c for c in cleaned[0].keys() if c not in base]
-    grouped: dict[tuple[str, str, str, date], dict[str, Any]] = {}
+    date_cols = [c for c in cleaned[0].keys() if c not in [*base, "Product"]]
+    grouped: dict[tuple[str, str, str, str, date], dict[str, Any]] = {}
     for r in cleaned:
         for c in date_cols:
             try:
                 measurement_date = parse_date(c)
             except Exception:
                 continue
-            key = (str(r["Line"]).strip(), str(r["Type"]).strip(), str(r["Process"]).strip(), measurement_date)
+            product = str(r.get("Product", "") or r["Type"]).strip()
+            key = (product, str(r["Line"]).strip(), str(r["Type"]).strip(), str(r["Process"]).strip(), measurement_date)
             item = grouped.setdefault(
                 key,
                 {
-                    "line": key[0],
-                    "type": key[1],
-                    "processName": key[2],
-                    "measurementDate": key[3],
+                    "product": key[0],
+                    "line": key[1],
+                    "type": key[2],
+                    "processName": key[3],
+                    "measurementDate": key[4],
                     "totalCount": 0,
                     "ngCount": 0,
                     "etcCount": 0,

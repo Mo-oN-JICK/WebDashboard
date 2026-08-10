@@ -92,13 +92,14 @@ def index():
 @bp.get("/api/options")
 @login_required
 def options():
-    processes = ProcessMaster.query.order_by(ProcessMaster.line, ProcessMaster.type, ProcessMaster.processName).all()
+    processes = ProcessMaster.query.order_by(ProcessMaster.product, ProcessMaster.line, ProcessMaster.processName).all()
     return jsonify(
         {
+            "products": sorted({p.product for p in processes if p.product}),
             "lines": sorted({p.line for p in processes}),
             "types": sorted({p.type for p in processes}),
             "processes": [
-                {"id": p.id, "line": p.line, "type": p.type, "processName": p.processName, "status": p.status, "isActive": p.isActive}
+                {"id": p.id, "product": p.product, "line": p.line, "type": p.type, "processName": p.processName, "status": p.status, "isActive": p.isActive}
                 for p in processes
             ],
             "statuses": [s.name for s in StatusOption.query.filter_by(isActive=True).order_by(StatusOption.name).all()],
@@ -143,7 +144,7 @@ def etc_consecutive_alerts(args) -> list[dict]:
         consecutive_count = max(1, int(float(setting.value if setting else "3")))
     except (TypeError, ValueError):
         consecutive_count = 3
-    rows = DailyMeasurement.query.join(ProcessMaster).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
+    rows = DailyMeasurement.query.join(ProcessMaster).order_by(ProcessMaster.product, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
     alerts = []
     grouped: dict[int, list[DailyMeasurement]] = {}
     for row in rows:
@@ -167,6 +168,7 @@ def etc_consecutive_alerts(args) -> list[dict]:
                 "title": f"분류실패% {threshold}% 이상 {consecutive_count}회 연속",
                 "processId": first.processId,
                 "type": first.process.type,
+                "product": first.process.product,
                 "line": first.process.line,
                 "processName": first.process.processName,
                 "status": first.process.status,
@@ -183,7 +185,7 @@ def etc_daily_increase_alerts(args) -> list[dict]:
     threshold = setting_float("etc_daily_increase_threshold", 0)
     if threshold <= 0:
         return []
-    rows = DailyMeasurement.query.join(ProcessMaster).order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
+    rows = DailyMeasurement.query.join(ProcessMaster).order_by(ProcessMaster.product, ProcessMaster.line, ProcessMaster.processName, DailyMeasurement.measurementDate).all()
     grouped: dict[int, list[DailyMeasurement]] = {}
     for row in rows:
         grouped.setdefault(row.processId, []).append(row)
@@ -204,6 +206,7 @@ def etc_daily_increase_alerts(args) -> list[dict]:
                     "title": f"분류실패% 하루 증가 +{threshold}% 이상",
                     "processId": row.processId,
                     "type": row.process.type,
+                    "product": row.process.product,
                     "line": row.process.line,
                     "processName": row.process.processName,
                     "status": row.process.status,
@@ -227,7 +230,7 @@ def stale_process_alerts(args) -> list[dict]:
     today = datetime.now(KST).date()
     query = ProcessMaster.query.filter_by(isActive=True)
     alerts = []
-    for proc in query.order_by(ProcessMaster.type, ProcessMaster.line, ProcessMaster.processName).all():
+    for proc in query.order_by(ProcessMaster.product, ProcessMaster.line, ProcessMaster.processName).all():
         last = DailyMeasurement.query.filter_by(processId=proc.id).order_by(desc(DailyMeasurement.measurementDate)).first()
         days_since = None if not last else (today - last.measurementDate).days
         if last and days_since < threshold_days:
@@ -241,6 +244,7 @@ def stale_process_alerts(args) -> list[dict]:
                 "title": f"데이터 미입력 {threshold_days}일 경과",
                 "processId": proc.id,
                 "type": proc.type,
+                "product": proc.product,
                 "line": proc.line,
                 "processName": proc.processName,
                 "status": proc.status,
@@ -300,7 +304,7 @@ def compare_process():
     rows = filtered_query(request.args).all()
     grouped: dict[int, dict] = {}
     for row in rows:
-        item = grouped.setdefault(row.processId, {"processId": row.processId, "line": row.process.line, "type": row.process.type, "processName": row.process.processName, "totalCount": 0, "ngCount": 0, "etcCount": 0, "clusters": []})
+        item = grouped.setdefault(row.processId, {"processId": row.processId, "product": row.process.product, "line": row.process.line, "type": row.process.type, "processName": row.process.processName, "totalCount": 0, "ngCount": 0, "etcCount": 0, "clusters": []})
         item["totalCount"] += row.totalCount
         item["ngCount"] += row.ngCount
         item["etcCount"] += row.etcCount
@@ -581,7 +585,7 @@ def apply_extra_counts(item: DailyMeasurement, data: dict) -> None:
 @bp.get("/api/processes")
 @login_required
 def processes():
-    return jsonify([{"id": p.id, "line": p.line, "type": p.type, "processName": p.processName, "status": p.status, "isActive": p.isActive} for p in ProcessMaster.query.order_by(ProcessMaster.line, ProcessMaster.type, ProcessMaster.processName).all()])
+    return jsonify([{"id": p.id, "product": p.product, "line": p.line, "type": p.type, "processName": p.processName, "status": p.status, "isActive": p.isActive} for p in ProcessMaster.query.order_by(ProcessMaster.product, ProcessMaster.line, ProcessMaster.processName).all()])
 
 
 @bp.post("/api/processes")
@@ -589,7 +593,8 @@ def processes():
 @admin_required
 def create_process():
     data = request.json or {}
-    proc = ProcessMaster(line=data["line"].strip(), type=data["type"].strip(), processName=data["processName"].strip(), status=(data.get("status") or "").strip())
+    product = (data.get("product") or data.get("type") or "").strip()
+    proc = ProcessMaster(product=product, line=data["line"].strip(), type=data["type"].strip(), processName=data["processName"].strip(), status=(data.get("status") or "").strip())
     db.session.add(proc)
     db.session.flush()
     add_audit(current_user(), "생성", "ProcessMaster", proc.id, None, data)
@@ -602,9 +607,9 @@ def create_process():
 @admin_required
 def update_process(proc_id: int):
     proc = ProcessMaster.query.get_or_404(proc_id)
-    before = {"line": proc.line, "type": proc.type, "processName": proc.processName, "status": proc.status, "isActive": proc.isActive}
+    before = {"product": proc.product, "line": proc.line, "type": proc.type, "processName": proc.processName, "status": proc.status, "isActive": proc.isActive}
     data = request.json or {}
-    for attr in ["line", "type", "processName", "status", "isActive"]:
+    for attr in ["product", "line", "type", "processName", "status", "isActive"]:
         if attr in data:
             setattr(proc, attr, data[attr])
     add_audit(current_user(), "수정", "ProcessMaster", proc.id, before, data)
@@ -617,7 +622,7 @@ def update_process(proc_id: int):
 @admin_required
 def delete_process(proc_id: int):
     proc = ProcessMaster.query.get_or_404(proc_id)
-    before = {"line": proc.line, "type": proc.type, "processName": proc.processName, "status": proc.status, "isActive": proc.isActive}
+    before = {"product": proc.product, "line": proc.line, "type": proc.type, "processName": proc.processName, "status": proc.status, "isActive": proc.isActive}
     measurements = DailyMeasurement.query.filter_by(processId=proc.id).all()
     has_data = len(measurements) > 0
     if has_data and proc.isActive:
@@ -711,7 +716,7 @@ def missing():
         missed = [d for d in dates if d not in existing]
         last = DailyMeasurement.query.filter_by(processId=proc.id).order_by(desc(DailyMeasurement.measurementDate)).first()
         if missed:
-            rows.append({"processId": proc.id, "line": proc.line, "type": proc.type, "processName": proc.processName, "missingCount": len(missed), "lastInputDate": last.measurementDate.isoformat() if last else "-", "missingDates": [d.isoformat() for d in missed]})
+            rows.append({"processId": proc.id, "product": proc.product, "line": proc.line, "type": proc.type, "processName": proc.processName, "missingCount": len(missed), "lastInputDate": last.measurementDate.isoformat() if last else "-", "missingDates": [d.isoformat() for d in missed]})
     return jsonify(rows)
 
 

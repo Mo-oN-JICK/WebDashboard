@@ -335,7 +335,7 @@ function params() {
   ["start", "end"].forEach((id) => {
     if ($("#" + id).value) search.set(id, $("#" + id).value);
   });
-  ["type", "line", "process"].forEach((key) => {
+  ["product", "line", "process"].forEach((key) => {
     checkedValues(key).forEach((value) => search.append(key, value));
   });
   const query = $("#globalSearch")?.value;
@@ -356,6 +356,7 @@ async function init() {
 }
 
 function hydrateOptions() {
+  renderFilterOptions("product", state.options.products || state.options.processes.map((p) => p.product));
   renderFilterOptions("type", state.options.types);
   renderFilterOptions("line", state.options.lines);
   renderFilterOptions("process", state.options.processes.map((p) => p.processName));
@@ -383,32 +384,54 @@ function renderFilterOptions(name, values) {
 function renderProcessTree() {
   const target = $("#processTree");
   if (!target || !state.options?.processes) return;
-  const selectedType = checkedValues("type")[0] || "";
+  const selectedProduct = checkedValues("product")[0] || "";
   const selectedLine = checkedValues("line")[0] || "";
   const selectedProcess = checkedValues("process")[0] || "";
+  const warningCounts = treeWarningCounts();
   const grouped = {};
   state.options.processes
     .filter((process) => process.isActive)
     .forEach((process) => {
-      grouped[process.type] ??= {};
-      grouped[process.type][process.line] ??= [];
-      grouped[process.type][process.line].push(process);
+      const product = process.product || process.type || "-";
+      grouped[product] ??= {};
+      grouped[product][process.line] ??= [];
+      grouped[product][process.line].push(process);
     });
-  const html = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([type, lines]) => {
+  const html = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([product, lines]) => {
     const lineHtml = Object.entries(lines).sort(([a], [b]) => a.localeCompare(b)).map(([line, processes]) => {
       const processHtml = processes
         .sort((a, b) => a.processName.localeCompare(b.processName))
-        .map((process) => `<button type="button" class="process-leaf ${selectedProcess === process.processName && selectedLine === process.line && selectedType === process.type ? "active" : ""}" data-type="${esc(process.type)}" data-line="${esc(process.line)}" data-process="${esc(process.processName)}">${esc(process.processName)}${process.status ? `<small>${esc(process.status)}</small>` : ""}</button>`)
+        .map((process) => `<button type="button" class="process-leaf ${selectedProcess === process.processName && selectedLine === process.line && selectedProduct === (process.product || process.type) ? "active" : ""}" data-product="${esc(process.product || process.type)}" data-line="${esc(process.line)}" data-process="${esc(process.processName)}"><span>${esc(process.processName)}</span>${warningBadge(warningCounts.process.get(process.id) || 0)}</button>`)
         .join("");
-      return `<details class="tree-line" ${selectedLine === line || selectedType === type ? "open" : ""}><summary><span class="tree-toggle" aria-hidden="true"></span><button type="button" class="${selectedLine === line && selectedType === type && !selectedProcess ? "active" : ""}" data-type="${esc(type)}" data-line="${esc(line)}">${esc(line)}</button></summary><div class="tree-children">${processHtml}</div></details>`;
+      const lineKey = `${product}||${line}`;
+      return `<details class="tree-line" ${selectedLine === line || selectedProduct === product ? "open" : ""}><summary><span class="tree-toggle" aria-hidden="true"></span><button type="button" class="${selectedLine === line && selectedProduct === product && !selectedProcess ? "active" : ""}" data-product="${esc(product)}" data-line="${esc(line)}"><span>${esc(line)}</span>${warningBadge(warningCounts.line.get(lineKey) || 0)}</button></summary><div class="tree-children">${processHtml}</div></details>`;
     }).join("");
-    return `<details class="tree-type" ${selectedType === type ? "open" : ""}><summary><span class="tree-toggle" aria-hidden="true"></span><button type="button" class="${selectedType === type && !selectedLine && !selectedProcess ? "active" : ""}" data-type="${esc(type)}">${esc(type)}</button></summary><div class="tree-children">${lineHtml}</div></details>`;
+    return `<details class="tree-product" ${selectedProduct === product ? "open" : ""}><summary><span class="tree-toggle" aria-hidden="true"></span><button type="button" class="${selectedProduct === product && !selectedLine && !selectedProcess ? "active" : ""}" data-product="${esc(product)}"><span>${esc(product)}</span>${warningBadge(warningCounts.product.get(product) || 0)}</button></summary><div class="tree-children">${lineHtml}</div></details>`;
   }).join("");
   target.innerHTML = html || `<div class="empty">등록된 공정이 없습니다</div>`;
 }
 
+function warningBadge(count) {
+  return count ? `<span class="tree-badge">${fmt(count)}</span>` : "";
+}
+
+function treeWarningCounts() {
+  const counts = { product: new Map(), line: new Map(), process: new Map() };
+  const processById = new Map((state.options?.processes || []).map((process) => [Number(process.id), process]));
+  (state.alerts || []).filter((alert) => alert.level !== "notice").forEach((alert) => {
+    const process = processById.get(Number(alert.processId));
+    if (!process) return;
+    const product = process.product || process.type || "-";
+    const lineKey = `${product}||${process.line}`;
+    counts.product.set(product, (counts.product.get(product) || 0) + 1);
+    counts.line.set(lineKey, (counts.line.get(lineKey) || 0) + 1);
+    counts.process.set(process.id, (counts.process.get(process.id) || 0) + 1);
+  });
+  return counts;
+}
+
 function applyProcessTreeFilter(dataset) {
-  setRadioValue("type", dataset.type || "");
+  setRadioValue("product", dataset.product || "");
   linkedFilters();
   setRadioValue("line", dataset.line || "");
   linkedFilters();
@@ -420,17 +443,17 @@ function applyProcessTreeFilter(dataset) {
 
 function fillProcess(selector) {
   $(selector).innerHTML = filteredProcesses(true)
-    .map((process) => `<option value="${process.id}">${esc(process.line)} / ${esc(process.type)} / ${esc(process.processName)}</option>`)
+    .map((process) => `<option value="${process.id}">${esc(process.product || process.type)} / ${esc(process.line)} / ${esc(process.processName)}</option>`)
     .join("");
 }
 
 function filteredProcesses(activeOnly = false, source = state.options.processes) {
-  const types = checkedValues("type");
+  const products = checkedValues("product");
   const lines = checkedValues("line");
   const processes = checkedValues("process");
   return source.filter((process) => (
     (!activeOnly || process.isActive)
-    && (!types.length || types.includes(process.type))
+    && (!products.length || products.includes(process.product || process.type))
     && (!lines.length || lines.includes(process.line))
     && (!processes.length || processes.includes(process.processName))
   ));
@@ -454,7 +477,7 @@ function bind() {
     button.onclick = () => showView(button.dataset.view, button.textContent);
   });
   $("#processTree").onclick = (event) => {
-    const button = event.target.closest("button[data-type]");
+    const button = event.target.closest("button[data-product]");
     if (!button) return;
     event.preventDefault();
     applyProcessTreeFilter(button.dataset);
@@ -500,9 +523,9 @@ function bind() {
     quickRange(event.target.value);
     applyFiltersImmediately();
   };
-  ["type", "line", "process"].forEach((name) => {
+  ["product", "line", "process"].forEach((name) => {
     $(`#${name}Options`).addEventListener("change", () => {
-      if (name === "type" || name === "line") linkedFilters();
+      if (name === "product" || name === "line") linkedFilters();
       updateFilterCounts();
       updateTrendTitle();
       refreshProcessCombos();
@@ -603,12 +626,12 @@ function quickRange(value) {
 }
 
 function linkedFilters() {
-  const types = checkedValues("type");
+  const products = checkedValues("product");
   const lines = checkedValues("line");
   const currentLines = new Set(lines);
   const currentProcesses = new Set(checkedValues("process"));
-  const typeFiltered = state.options.processes.filter((process) => !types.length || types.includes(process.type));
-  renderFilterOptions("line", [...new Set(typeFiltered.map((process) => process.line))].sort());
+  const productFiltered = state.options.processes.filter((process) => !products.length || products.includes(process.product || process.type));
+  renderFilterOptions("line", [...new Set(productFiltered.map((process) => process.line))].sort());
   $$(`input[name="lineFilter"]`).forEach((input) => {
     input.checked = currentLines.size ? currentLines.has(input.value) : input.value === "";
   });
@@ -616,7 +639,7 @@ function linkedFilters() {
     $(`input[name="lineFilter"][value=""]`).checked = true;
   }
   const refreshedLines = checkedValues("line");
-  const processes = typeFiltered.filter((process) => !refreshedLines.length || refreshedLines.includes(process.line));
+  const processes = productFiltered.filter((process) => !refreshedLines.length || refreshedLines.includes(process.line));
   renderFilterOptions("process", [...new Set(processes.map((process) => process.processName))].sort());
   $$(`input[name="processFilter"]`).forEach((input) => {
     input.checked = currentProcesses.size ? currentProcesses.has(input.value) : input.value === "";
@@ -628,8 +651,8 @@ function linkedFilters() {
 }
 
 function updateFilterCounts() {
-  const shortLabels = { type: "Type", line: "Line", process: "Process" };
-  ["type", "line", "process"].forEach((name) => {
+  const shortLabels = { product: "Product", type: "Type", line: "Line", process: "Process" };
+  ["product", "line", "process"].forEach((name) => {
     const count = checkedValues(name).length;
     $(`#${name}Count`).textContent = count ? `${shortLabels[name]} ${count}` : `${shortLabels[name]} 전체`;
   });
@@ -639,11 +662,11 @@ function updateTrendTitle() {
   const title = $("#trendTitle");
   if (!title || !state.options) return;
   const selectedProcesses = checkedValues("process");
-  const selectedTypes = checkedValues("type");
+  const selectedProducts = checkedValues("product");
   const selectedLines = checkedValues("line");
   if (selectedProcesses.length === 0) {
-    if (selectedTypes.length || selectedLines.length) {
-      title.innerHTML = `<span class="trend-title-row">${selectedTypes[0] ? `<span class="trend-chip"><small>Type</small>${esc(selectedTypes[0])}</span>` : ""}${selectedLines[0] ? `<span class="trend-chip"><small>Line</small>${esc(selectedLines[0])}</span>` : ""}<span>Process별 날짜 막대 그래프</span></span>`;
+    if (selectedProducts.length || selectedLines.length) {
+      title.innerHTML = `<span class="trend-title-row">${selectedProducts[0] ? `<span class="trend-chip"><small>Product</small>${esc(selectedProducts[0])}</span>` : ""}${selectedLines[0] ? `<span class="trend-chip"><small>Line</small>${esc(selectedLines[0])}</span>` : ""}<span>Process별 날짜 막대 그래프</span></span>`;
       return;
     }
     title.textContent = "날짜별 추이 그래프";
@@ -655,7 +678,7 @@ function updateTrendTitle() {
   }
   const process = state.options.processes.find((item) => (
     item.processName === selectedProcesses[0]
-    && (!selectedTypes.length || selectedTypes.includes(item.type))
+    && (!selectedProducts.length || selectedProducts.includes(item.product || item.type))
     && (!selectedLines.length || selectedLines.includes(item.line))
   )) || state.options.processes.find((item) => item.processName === selectedProcesses[0]);
   if (!process) {
@@ -672,7 +695,7 @@ function applyUrl() {
     quickRange("7");
     $("#quickRange").value = "7";
   }
-  ["type", "line", "process"].forEach((name) => {
+  ["product", "line", "process"].forEach((name) => {
     const values = search.getAll(name);
     $$(`input[name="${name}Filter"]`).forEach((input) => {
       input.checked = values.includes(input.value);
@@ -764,10 +787,10 @@ function statusBase(value) {
 function selectedSummaryName() {
   const process = checkedValues("process")[0];
   const line = checkedValues("line")[0];
-  const type = checkedValues("type")[0];
+  const product = checkedValues("product")[0];
   if (process) return { name: process, level: "Process" };
   if (line) return { name: line, level: "Line" };
-  if (type) return { name: type, level: "Type" };
+  if (product) return { name: product, level: "Product" };
   return { name: "전체", level: "공정" };
 }
 
@@ -842,15 +865,15 @@ function warningTriangleIcon() {
 }
 
 function processKey(process) {
-  return `${process.type}||${process.line}||${process.processName}`;
+  return `${process.product || process.type}||${process.line}||${process.processName}`;
 }
 
 function rowProcessKey(row) {
-  return `${row.type}||${row.line}||${row.processName}`;
+  return `${row.product || row.type}||${row.line}||${row.processName}`;
 }
 
 function alertProcessKey(alert) {
-  return `${alert.type}||${alert.line}||${alert.processName}`;
+  return `${alert.product || alert.type}||${alert.line}||${alert.processName}`;
 }
 
 function weeklyProcessCounts(weeks, processKeySet) {
@@ -888,9 +911,9 @@ function renderSummaryCards() {
   const target = $("#summaryCards");
   if (!target || !state.options?.processes) return;
   const active = state.options.processes.filter((process) => process.isActive);
-  const selectedType = checkedValues("type")[0] || "";
+  const selectedProduct = checkedValues("product")[0] || "";
   const currentProcesses = filteredProcesses(true);
-  const targetProcesses = selectedType ? active.filter((process) => process.type === selectedType) : active;
+  const targetProcesses = selectedProduct ? active.filter((process) => (process.product || process.type) === selectedProduct) : active;
   const currentProcessKeys = new Set(currentProcesses.map(processKey));
   const stableProcesses = currentProcesses.filter((process) => statusBase(process.status) === "판정 안정");
   const stableProcessKeys = new Set(stableProcesses.map(processKey));
@@ -934,10 +957,10 @@ function renderSummaryCards() {
 function selectedHierarchyLabel() {
   const process = checkedValues("process")[0];
   const line = checkedValues("line")[0];
-  const type = checkedValues("type")[0];
+  const product = checkedValues("product")[0];
   if (process) return `Process: ${process}`;
   if (line) return `Line: ${line}`;
-  if (type) return `Type: ${type}`;
+  if (product) return `Product: ${product}`;
   return "전체 공정";
 }
 
@@ -1331,7 +1354,7 @@ function positionFilterMenu(details) {
 }
 
 function isProcessGroupTrendMode() {
-  return !checkedValues("process").length && (checkedValues("type").length || checkedValues("line").length);
+  return !checkedValues("process").length && (checkedValues("product").length || checkedValues("line").length);
 }
 
 function processColor(index, alpha = 1) {
@@ -1452,7 +1475,7 @@ function hasPercentDataset(datasets, asPercent) {
 function showProcessDetail(processId) {
   const process = state.options.processes.find((item) => Number(item.id) === Number(processId));
   if (!process) return;
-  setRadioValue("type", process.type);
+  setRadioValue("product", process.product || process.type);
   linkedFilters();
   setRadioValue("line", process.line);
   linkedFilters();
@@ -1733,12 +1756,12 @@ function editTrendDateNote(date) {
     toast("비고를 작성하려면 Process를 하나 선택하세요");
     return;
   }
-  const selectedTypes = checkedValues("type");
+  const selectedProducts = checkedValues("product");
   const selectedLines = checkedValues("line");
   const row = state.rows.find((item) => (
     item.date === date
     && item.processName === selectedProcesses[0]
-    && (!selectedTypes.length || selectedTypes.includes(item.type))
+    && (!selectedProducts.length || selectedProducts.includes(item.product || item.type))
     && (!selectedLines.length || selectedLines.includes(item.line))
   ));
   if (!row) {
@@ -2046,11 +2069,12 @@ async function loadProcesses() {
   const rowIds = new Set(rows.map((row) => Number(row.id)));
   state.selectedProcesses = new Set([...state.selectedProcesses].filter((id) => rowIds.has(Number(id))));
   const visibleIds = rows.map((row) => row.id);
-  renderTable("#processTable", [selectionHead("process", visibleIds), "Type", "Line", "Process", "현황", "활성", "관리"], rows.map((row) => [
+  renderTable("#processTable", [selectionHead("process", visibleIds), "Product", "Line", "Process", "Type", "현황", "활성", "관리"], rows.map((row) => [
     selectionCell("process", row.id),
-    row.type,
+    row.product || row.type,
     row.line,
     row.processName,
+    row.type,
     row.status,
     row.isActive ? "활성" : "비활성",
     isAdmin ? `<button onclick="editProcess(${row.id})">수정</button> <button onclick="toggleProcess(${row.id},${!row.isActive})">${row.isActive ? "비활성화" : "활성화"}</button>` : "-",
@@ -2059,7 +2083,7 @@ async function loadProcesses() {
 }
 
 window.editProcess = async (id, originView = null) => {
-  const row = id ? (await api("/api/processes")).find((item) => item.id === id) : { line: "", type: "", processName: "", status: "" };
+  const row = id ? (await api("/api/processes")).find((item) => item.id === id) : { product: "", line: "", type: "", processName: "", status: "" };
   modal(id ? "공정 수정" : "공정 등록", processFormHtml(row), async () => {
     const data = modalData();
     data.status = composeProcessStatus(data.statusBase, data.statusComment);
@@ -2092,15 +2116,15 @@ function composeProcessStatus(base, comment) {
 function processFormHtml(row) {
   const status = splitProcessStatus(row.status);
   return `<div class="form-grid">
-    <label>Type<input name="type" list="processTypeList" value="${esc(row.type)}" required></label>
+    <label>Product<input name="product" list="processProductList" value="${esc(row.product || row.type)}" required></label>
     <label>Line<input name="line" list="processLineList" value="${esc(row.line)}" required></label>
     <label>Process<input name="processName" value="${esc(row.processName)}" required></label>
-    <label>현황 기본항목<input name="statusBase" list="processStatusList" value="${esc(status.base)}" placeholder="직접 입력 가능"></label>
-    <div class="wide status-default-box"><strong>기본항목</strong><div>${defaultStatuses.map((item) => `<button type="button" class="status-default-chip" onclick="setProcessStatusBase('${encodeURIComponent(item)}')">${esc(item)}</button>`).join("")}</div></div>
+    <label>Type<input name="type" list="processTypeList" value="${esc(row.type)}" required></label>
+    <label>현황 기본항목<select name="statusBase"><option value="">미선택</option>${defaultStatuses.map((item) => `<option value="${esc(item)}" ${status.base === item ? "selected" : ""}>${esc(item)}</option>`).join("")}</select></label>
     <label class="wide">현황 코멘트<input name="statusComment" value="${esc(status.comment)}" placeholder="기본항목 뒤에 붙일 코멘트"></label>
+    ${datalistHtml("processProductList", uniqueValues(state.options.processes.map((item) => item.product || item.type)))}
     ${datalistHtml("processTypeList", uniqueValues(state.options.processes.map((item) => item.type)))}
     ${datalistHtml("processLineList", uniqueValues(state.options.processes.map((item) => item.line)))}
-    ${statusDatalistHtml("processStatusList", uniqueValues([...defaultStatuses, ...(state.options.statuses || []), ...state.options.processes.map((item) => splitProcessStatus(item.status).base)]))}
   </div>`;
 }
 

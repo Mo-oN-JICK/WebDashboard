@@ -243,10 +243,11 @@ ETC\t3\t4
 
 def test_process_create_defaults_blank_status_and_delete_without_data(client):
     login(client)
-    res = client.post("/api/processes", json={"type": "FAS3.0", "line": "RB", "processName": "No Data Process"})
+    res = client.post("/api/processes", json={"product": "Widget-A", "type": "FAS3.0", "line": "RB", "processName": "No Data Process"})
     assert res.status_code == 201
     proc_id = res.get_json()["id"]
     proc = ProcessMaster.query.get(proc_id)
+    assert proc.product == "Widget-A"
     assert proc.status == ""
     res = client.delete(f"/api/processes/{proc_id}")
     assert res.status_code == 200

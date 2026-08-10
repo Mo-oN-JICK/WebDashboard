@@ -33,6 +33,7 @@ class User(db.Model):
 class ProcessMaster(db.Model):
     __tablename__ = "process_master"
     id = db.Column(db.Integer, primary_key=True)
+    product = db.Column(db.String(120), nullable=False, default="", index=True)
     line = db.Column(db.String(80), nullable=False, index=True)
     type = db.Column(db.String(120), nullable=False, index=True)
     processName = db.Column(db.String(200), nullable=False, index=True)
@@ -41,7 +42,10 @@ class ProcessMaster(db.Model):
     createdAt = db.Column(db.DateTime(timezone=True), default=now_utc, nullable=False)
     updatedAt = db.Column(db.DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
     measurements = db.relationship("DailyMeasurement", backref="process", lazy=True)
-    __table_args__ = (UniqueConstraint("line", "type", "processName", name="uq_process_identity"),)
+    __table_args__ = (
+        UniqueConstraint("line", "type", "processName", name="uq_process_identity"),
+        UniqueConstraint("product", "line", "processName", name="uq_process_product_identity"),
+    )
 
 
 class DailyMeasurement(db.Model):

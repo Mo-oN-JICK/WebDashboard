@@ -51,9 +51,9 @@ def seed_defaults() -> None:
     ]
     processes = []
     for line, typ, name, status in samples:
-        proc = ProcessMaster.query.filter_by(line=line, type=typ, processName=name).first()
+        proc = ProcessMaster.query.filter_by(product=typ, line=line, processName=name).first()
         if not proc:
-            proc = ProcessMaster(line=line, type=typ, processName=name, status=status)
+            proc = ProcessMaster(product=typ, line=line, type=typ, processName=name, status=status)
             db.session.add(proc)
             db.session.flush()
         processes.append(proc)

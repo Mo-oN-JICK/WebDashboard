@@ -56,6 +56,16 @@ def ensure_sqlite_schema() -> None:
         "classCount": "INTEGER NOT NULL DEFAULT 0",
     }
     with db.engine.connect() as conn:
+        process_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(process_master)").fetchall()}
+        if "product" not in process_columns:
+            conn.exec_driver_sql("ALTER TABLE process_master ADD COLUMN product VARCHAR(120) NOT NULL DEFAULT ''")
+            conn.exec_driver_sql("UPDATE process_master SET product = type WHERE product = ''")
+        conn.exec_driver_sql(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_process_product_identity_idx
+            ON process_master(product, line, processName)
+            """
+        )
         existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(daily_measurement)").fetchall()}
         for name, ddl in required.items():
             if name not in existing:
