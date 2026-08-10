@@ -1445,6 +1445,10 @@ function overPercentIndexes(datasets) {
   return [...indexes];
 }
 
+function hasPercentDataset(datasets, asPercent) {
+  return asPercent || datasets.some((dataset) => String(dataset.metricKey || "").includes("Rate"));
+}
+
 function showProcessDetail(processId) {
   const process = state.options.processes.find((item) => Number(item.id) === Number(processId));
   if (!process) return;
@@ -1503,6 +1507,7 @@ function renderGroupedProcessTrend(rows) {
   processes.forEach((process) => {
     const processRows = processRowByDate(rows, process, dates);
     const datasets = processCardDatasets(processRows, selected, asPercent);
+    const hasPercent = hasPercentDataset(datasets, asPercent);
     chart(`#${processCardId(process)}`, "bar", {
       labels: dates.map(compactDate),
       datasets,
@@ -1513,7 +1518,7 @@ function renderGroupedProcessTrend(rows) {
           display: false,
         },
         overPercentWave: {
-          indexes: asPercent ? overPercentIndexes(datasets) : [],
+          indexes: hasPercent ? overPercentIndexes(datasets) : [],
         },
         tooltip: {
           mode: "index",
@@ -1534,8 +1539,8 @@ function renderGroupedProcessTrend(rows) {
         y: {
           stacked: true,
           beginAtZero: true,
-          max: asPercent ? PERCENT_AXIS_MAX : undefined,
-          ticks: { color: "#a8b3c7", callback: (value) => asPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
+          max: hasPercent ? PERCENT_AXIS_MAX : undefined,
+          ticks: { color: "#a8b3c7", callback: (value) => hasPercent ? `${value}%` : Number(value).toLocaleString("ko-KR") },
           grid: { color: "rgba(148,163,184,.16)" },
         },
       },
