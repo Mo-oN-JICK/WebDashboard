@@ -13,7 +13,7 @@ const state = {
   page: 1,
   pageSize: 20,
   pivotDesc: false,
-  activeView: "dashboard",
+  activeView: "main",
   datePickerMonth: null,
   pendingRangeStart: "",
   charts: {},
@@ -594,7 +594,8 @@ function showView(view, title) {
   $$(".view").forEach((el) => el.classList.remove("active"));
   $("#view-" + view).classList.add("active");
   $$(".top-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
-  $("#pageTitle").textContent = view === "dashboard" ? "날짜별 생산·품질 현황" : title;
+  document.body.classList.toggle("main-view", view === "main");
+  $("#pageTitle").textContent = view === "main" ? "생산·품질 현황" : view === "dashboard" ? "날짜별 생산·품질 현황" : title;
   $("#pageEyebrow").textContent = title;
   if (view === "audit") loadAudit();
   if (view === "users") loadUsers();
@@ -602,8 +603,8 @@ function showView(view, title) {
 }
 
 function restoreView() {
-  const view = sessionStorage.getItem("activeView");
-  const button = view ? $(`.top-tabs button[data-view="${view}"]`) : null;
+  const view = sessionStorage.getItem("activeView") || "main";
+  const button = $(`.top-tabs button[data-view="${view}"]`);
   if (button) showView(view, button.textContent);
 }
 
@@ -730,6 +731,7 @@ async function loadDashboard() {
   state.trends = normalizeTrendRows(trends);
   state.processCompare = processCompare;
   state.alerts = activeAlerts(dashboard.alerts || []);
+  renderMainStatusBoard();
   const processSelected = checkedValues("process").length > 0;
   $("#summaryCards")?.classList.toggle("hidden", processSelected);
   if (!processSelected) renderSummaryCards();
@@ -761,6 +763,31 @@ async function loadMissing() {
     fmt(row.missingCount),
     row.lastInputDate,
   ]));
+}
+
+function renderMainStatusBoard() {
+  const board = $("#mainStatusBoard");
+  if (!board || !state.options?.processes) return;
+  const groups = new Map();
+  filteredProcesses(true).forEach((process) => {
+    const product = process.product || process.type || "미분류";
+    if (!groups.has(product)) groups.set(product, []);
+    groups.get(product).push(process);
+  });
+  const warningProcessIds = new Set(state.alerts.filter((alert) => alert.level !== "notice").map((alert) => Number(alert.processId)));
+  const statuses = [["판정 안정", "stable"], ["예외 초과", "exception"], ["설비 점검", "inspection"], ["비가동", "stopped"]];
+  const activeProcesses = [...groups.values()].flat();
+  const selection = selectedHierarchyLabel().replace(/^(Product|Line|Process): /, "");
+  $("#mainBoardTitle").textContent = `${selection} 공정 현황`;
+  $("#mainBoardMeta").textContent = `활성 공정 ${fmt(activeProcesses.length)}개 · 경고 ${fmt(activeProcesses.filter((process) => warningProcessIds.has(Number(process.id))).length)}건`;
+  board.innerHTML = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([product, processes]) => {
+    const warningCount = processes.filter((process) => warningProcessIds.has(Number(process.id))).length;
+    const tiles = statuses.map(([status, tone]) => {
+      const count = processes.filter((process) => statusBase(process.status) === status).length;
+      return `<div class="main-status-tile ${tone}"><span>${esc(status)}</span><strong>${fmt(count)}<small>공정</small></strong></div>`;
+    }).join("");
+    return `<article class="main-status-group"><header><div><p>PRODUCT</p><h4>${esc(product)}</h4></div><span class="main-group-total">${fmt(processes.length)}개 공정${warningCount ? ` · 경고 ${fmt(warningCount)}` : ""}</span></header><div class="main-status-grid">${tiles}</div></article>`;
+  }).join("") || `<div class="empty">표시할 활성 공정이 없습니다</div>`;
 }
 
 function renderKpis(data) {
